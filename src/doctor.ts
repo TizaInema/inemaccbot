@@ -7,7 +7,7 @@ import { carregarSkills } from './dominio/registry.js';
 const skillPorComando:Record<string,string>={transcrever:'inemavox',dublar:'inemavox',explicativo:'video-explicativo',curso:'videos-cursos-inema',demo:'video-demonstrativo',reel:'reel-edita-inema',reelpromo:'reel-promoavatar',reelinematds:'reel-edita-inematds',historia:'videos-agnes',imagem:'imagens-agnes'};
 export function diagnosticar(raiz=resolve(fileURLToPath(new URL('..',import.meta.url)))) {
   const defs=carregarSkills(join(raiz,'config','skills.json'),raiz);
-  const executores=Object.fromEntries(['codex','claude','ffmpeg','ffprobe'].map(bin=>[bin,spawnSync(bin,['--version'],{encoding:'utf8',timeout:10_000,shell:false}).status===0]));
+  const executores=Object.fromEntries(['codex','claude','ffmpeg','ffprobe'].map(bin=>[bin,spawnSync(bin,[bin.startsWith('ff')?'-version':'--version'],{encoding:'utf8',timeout:10_000,shell:false}).status===0]));
   return {node:process.version,executores,skills:defs.map(d=>{
     const name=skillPorComando[d.command];
     const roots=[join(raiz,'.claude','skills'),join(homedir(),'.claude','skills'),join(homedir(),'.agents','skills')];

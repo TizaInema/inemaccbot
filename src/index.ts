@@ -435,9 +435,16 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
 
     // O notificador do worker faz as duas coisas: avisa sobre o JOB (quando ele
     // tem dono no chat) e solta os avisos de FLUXO que o avanço empilhou.
-    notificar = async (job: Job): Promise<void> => {
-      await notificarJob(job);
-      await soltarEventosDeFluxo();
+    const notificacoesEmAndamento = new Map<number, Promise<void>>();
+    notificar = (job: Job): Promise<void> => {
+      const emAndamento = notificacoesEmAndamento.get(job.id);
+      if (emAndamento) return emAndamento;
+      const envio = (async () => {
+        await notificarJob(job);
+        await soltarEventosDeFluxo();
+      })().finally(() => notificacoesEmAndamento.delete(job.id));
+      notificacoesEmAndamento.set(job.id, envio);
+      return envio;
     };
 
     // 6. §8: a recuperação acabou de marcar jobs como `failed` — uma transição

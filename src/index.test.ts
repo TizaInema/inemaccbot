@@ -12,10 +12,10 @@ it('inicia, processa uma tarefa persistida, notifica e desliga sem timers',async
     STATE_DIR:join(dir,'state'),QUEUE_DB:join(dir,'queue.db'),LOG_FILE:join(dir,'bot.log'),PROJETOS_DIR:dir});
   const messages:string[]=[];
   svc=criarServico(cfg,{
-    agora:()=>Math.floor(Date.now()/1000),intervaloOciosoMs:5,heartbeatMs:50,timeoutDrenoMs:1000,
+    agora:()=>Math.floor(Date.now()/1000),intervaloOciosoMs:5,heartbeatMs:10,timeoutDrenoMs:1000,
     log:()=>{},criarTarefas:()=>({smoke:async()=>'persistido'}),
     criarTransporte:(_cfg,deps)=>({
-      transporte:{responder:async(_id,text)=>{messages.push(text);}},
+      transporte:{responder:async(_id,text)=>{messages.push(text);await new Promise(r=>setTimeout(r,100));}},
       iniciar:async()=>{expect(await deps.aoComando(7,'/ping')).toBe('pong');},parar:async()=>{},
     }),
   });
@@ -25,4 +25,5 @@ it('inicia, processa uma tarefa persistida, notifica e desliga sem timers',async
   while(!messages.length&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
   expect(svc.fila.obter(1)?.status).toBe('done');expect(messages.join('')).toContain('persistido');
   await svc.parar();expect(svc.timers()).toBe(0);
+  expect(messages).toHaveLength(1); // heartbeat e worker compartilham o mesmo envio em andamento.
 });
