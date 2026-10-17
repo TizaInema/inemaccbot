@@ -39,7 +39,7 @@ beforeEach(() => {
     { ...comum, command: 'dublar', artefato_exts: ['mp4'], aceita_destino: true },
   ], dir);
 });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => { fila?.db.close(); rmSync(dir, { recursive: true, force: true }); });
 
 function deps(respostas: string[]): DepsMensagem {
   return {
@@ -149,7 +149,7 @@ describe('tratarMensagem', () => {
       runner,
       redigir: (t2) => t2.replace(/\d{8,}:[A-Za-z0-9_-]{30,}/g, '«redigido»'),
     });
-    expect(runner.chamadas[1]!.prompt).not.toContain('segredoqueNAOpodesair');
+    expect(runner.chamadas[1]!.prompt).not.toContain('123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   });
 
   it('contexto da resposta NUNCA carrega job de outro chat', async () => {
@@ -157,6 +157,16 @@ describe('tratarMensagem', () => {
     const runner = new FakeRunner({ respostas: [JSON.stringify({ pergunta: 'e aí?' }), 'nada seu por aqui.'] });
     await tratarMensagem(5, 'e aí?', { ...deps([]), runner });
     expect(runner.chamadas[1]!.prompt).not.toContain('job 1');
+  });
+});
+
+describe('isolamento de chats', () => {
+  it('não permite consultar nem cancelar um job de outro chat', async () => {
+    fila.enfileirar({fila:'texto',kind:'agent',tarefa:'transcrever',input:'{}',chat_id:777});
+    expect(await tratarMensagem(5,'/status 1',deps([]))).toContain('não existe');
+    expect(await tratarMensagem(5,'/cancelar 1',deps([]))).toContain('não existe');
+    expect(fila.obter(1)!.status).toBe('queued');
+    expect(await tratarMensagem(5,'/jobs',deps([]))).not.toContain('j1 ');
   });
 });
 

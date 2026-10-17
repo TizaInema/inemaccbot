@@ -1,27 +1,75 @@
-# inemaccbot — recuperação parcial
+# inemaccbot
 
-Esta branch preserva os arquivos encontrados nas pastas locais
-`_inemaccbot_catalog`, `_inemaccbot_patch` e `_inemaccbot_live_patch`.
-Não é uma distribuição completa nem executável do bot.
+Bot pessoal de produção de conteúdo pelo Telegram, com tarefas persistidas em
+SQLite e execução por Codex ou Claude Code. Requer Node.js 22.18 ou superior.
 
-O arquivo `recovery-manifest.json` registra a origem e o SHA-256 de cada
-arquivo recuperado. Os arquivos originais foram preservados.
+## Estado da recuperação
 
-## Verificação em 17/10/2026
+A branch `recovery/local-patches` preserva os 33 arquivos recuperados. O commit
+inicial contém um manifesto de origem e hashes. O restante do runtime foi
+reconstruído: configuração, banco, filas, worker, Telegram, catálogo e prompts.
+Não é uma restauração integral do motor original.
 
-- O repositório remoto `TizaInema/inemaccbot` estava vazio.
-- Na VPS informada, `/root/projetos/inemaccbot` não existia.
-- A unidade systemd de usuário `inemaccbot.service` existia, parada e desabilitada.
-- Os logs registravam falhas de tarefas de vídeo por ferramentas ausentes.
-- A conta GitHub conectada tinha apenas permissão de leitura no repositório.
+O núcleo suporta comandos, pedidos em linguagem natural, filas, recuperação de
+leases, cancelamento e entrega de arquivos. As dez skills do catálogo dependem
+das respectivas ferramentas e credenciais instaladas no servidor. O diagnóstico
+mostra a presença dos SKILL.md e executores; isso não garante que cada integração
+tenha todas as suas dependências configuradas.
 
-## Para concluir
+Os fluxos promocionais (`promoclub`, `promoavatar`, `promoavatar3`) permanecem
+indisponíveis: os contratos e projetos originais não foram recuperados. O bot
+recusa esses pedidos explicitamente. O diagnóstico HTTP arbitrário está desativado.
 
-Recuperar o projeto completo, incluindo `package.json`, lockfile,
-`tsconfig.json`, módulos importados e instruções de implantação; comparar
-com estes patches; instalar as dependências, executar os testes e configurar
-as credenciais diretamente no servidor antes de ativar o serviço.
+## Desenvolvimento
 
-Não enviar tokens, arquivos `.env`, bancos de dados, logs ou credenciais ao Git.
-Os scripts operacionais recuperados podem alterar filas ou enviar mensagens;
-não foram executados durante esta recuperação.
+```sh
+npm ci --ignore-scripts
+npm run build
+npm test
+npm run doctor
+```
+
+Os testes não chamam serviços reais nem precisam de tokens. Os testes que usam
+process groups e binários Linux rodam na VPS e no GitHub Actions; são pulados no Windows.
+
+## Instalação na VPS
+
+Pasta esperada pelo serviço: `/root/projetos/inemaccbot`.
+
+```sh
+cd /root/projetos/inemaccbot
+npm ci --ignore-scripts
+npm run build
+npm test
+install -m 644 deploy/inemaccbot.service /root/.config/systemd/user/inemaccbot.service
+XDG_RUNTIME_DIR=/run/user/0 systemctl --user daemon-reload
+python3 scripts/configure.py
+```
+
+O configurador pede o token de forma oculta, valida-o com `getMe`, pede os IDs
+dos chats autorizados e cria `.env` com permissão 600. Depois ativa o serviço.
+Um `.env` existente nunca é sobrescrito. Para configuração manual, copie
+`.env.example` para `.env`, preencha no servidor e proteja com `chmod 600 .env`.
+Nunca envie tokens pelo Git. Apenas chats explicitamente autorizados são aceitos.
+
+Codex precisa estar autenticado (`codex login status`). Claude é opcional e
+requer autenticação própria. Codex usa sandbox `workspace-write`; cada tarefa
+trabalha na pasta de artefatos de sua skill. Integrações que dependem de escrever
+em outras pastas precisam ser adaptadas antes de serem usadas.
+
+```sh
+XDG_RUNTIME_DIR=/run/user/0 systemctl --user status inemaccbot --no-pager
+XDG_RUNTIME_DIR=/run/user/0 journalctl --user -u inemaccbot -n 50 --no-pager
+```
+
+Após configurar, envie `/ping` pelo Telegram; a resposta esperada é `pong`.
+Use `/skills`, `/jobs`, `/fila`, `/status <id>`, `/cancelar <id>` e `/refazer <id>`.
+Exemplo: `explicativo: O que é RAG | vertical` (requer a skill e o render configurados).
+Anexos podem ser usados em legendas substituindo `{{anexo}}` pelo caminho baixado.
+
+## Dados e backups
+
+`.env`, bancos SQLite, logs, `state/`, resultados e credenciais estão no
+`.gitignore`. Faça backups dos dados separadamente, com o serviço parado ou por
+backup consistente do SQLite. O Git guarda o código, não as credenciais e o
+histórico de tarefas do bot antigo, que não foram recuperados.

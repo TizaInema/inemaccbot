@@ -13,3 +13,5 @@ state/
 output/
 *.pem
 *.key
+__pycache__/
+*.pyc

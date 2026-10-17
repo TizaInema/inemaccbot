@@ -38,7 +38,7 @@ export function argumentosCodex(ctx: ContextoExecucao, outputFile: string): stri
   return [
     'exec',
     '--skip-git-repo-check',
-    '--dangerously-bypass-approvals-and-sandbox',
+    '--sandbox', 'workspace-write',
     '--color', 'never',
     '-C', ctx.cwd,
     '--output-last-message', outputFile,

@@ -15,6 +15,7 @@
 // Portado do `deliver.ts`/`media.ts` do v1 no que importa: sanitização de nome e
 // garantia de que a cópia NUNCA escreve fora do diretório de destino.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { basename, dirname, extname, resolve, sep } from 'node:path';
 
@@ -86,7 +87,9 @@ export function copiarParaDestino(origem: string, destinoDir: string, nomePedido
     // Mesmo tamanho: é o arquivo que já entregamos antes (retentativa do mesmo
     // job). Adota em vez de multiplicar cópias — a mesma regra de "procure
     // antes de criar" do §2.5, na escala desta operação.
-    if (statSync(alvo).size === statSync(origem).size) return alvo;
+    if (statSync(alvo).size === statSync(origem).size &&
+        createHash('sha256').update(readFileSync(alvo)).digest('hex') ===
+        createHash('sha256').update(readFileSync(origem)).digest('hex')) return alvo;
   }
 }
 

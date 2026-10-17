@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { acharSkill, carregarSkills, validarSkills } from './registry.js';
@@ -115,7 +116,7 @@ describe('carregarSkills', () => {
 describe('o registry REAL do repo', () => {
   // Sem isto, `config/skills.json` poderia ficar inválido sem nada acusar até o
   // boot em produção — o teste do validador passaria verde sobre fixtures.
-  const repo = new URL('../..', import.meta.url).pathname;
+  const repo = fileURLToPath(new URL('../..', import.meta.url));
   const defs = carregarSkills(join(repo, 'config', 'skills.json'), repo);
 
   it('é válido e tem as skills das etapas 2 e 3, mais as da Agnes', () => {

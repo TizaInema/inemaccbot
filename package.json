@@ -1,0 +1,20 @@
+{
+  "name": "inemaccbot",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "start": "node dist/index.js",
+    "doctor": "node dist/doctor.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

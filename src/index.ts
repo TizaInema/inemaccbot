@@ -189,7 +189,7 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
       // Mesmo motor da fila: um lugar só do sistema sabe falar com o Claude.
       runner: RUNNERS[cfg.motorPadrao] ?? RUNNERS.claude,
       perfil: { motor: cfg.motorPadrao, modelo: cfg.modeloPadrao, esforco: cfg.esforcoPadrao },
-      cwd: homedir(),
+      cwd: join(cfg.stateDir, 'interacao'),
       logFile: cfg.logFile,
       redigir,
       // Duas áreas, e a distinção não é cosmética: `state/artefatos` é do BOT
@@ -315,6 +315,7 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
     mkdirSync(raizMidia, { recursive: true });
     const raizArtefatos = join(cfg.stateDir, 'artefatos');
     mkdirSync(raizArtefatos, { recursive: true });
+    mkdirSync(join(cfg.stateDir, 'interacao'), { recursive: true });
 
     // 2.1 registry de skills. ANTES dos workers, e sem try/catch de propósito:
     //     registry inválido derruba o boot, igual a checksum de migration
