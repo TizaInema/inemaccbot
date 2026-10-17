@@ -1,0 +1,169 @@
+﻿[
+    {
+        "path":  "check-job3-response.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "d629d64a641133084fe8a1e244462cf2fd04806feab63317453f6f77311b3779"
+    },
+    {
+        "path":  "check-job4.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "222673d98a8a256a3eade0760ec4d72de8578a94d239a9e1e75660d3bacc0a43"
+    },
+    {
+        "path":  "check-video-queue.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "6dca380cd9190da5a5d120533d859fd5b5a31404e0196bf18f1d416e748b2da1"
+    },
+    {
+        "path":  "inspect-video-failure.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "6f2c3a15d242b8ce323aadd40afe165e1f2942b3299ab03ea732f33e97e87a59"
+    },
+    {
+        "path":  "monitor-job3.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "3f93f62b2ef5d41da1539abe97c4940b5a0c3b7e639123931e49ca6771e78d1d"
+    },
+    {
+        "path":  "reenqueue-job.mjs",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "ecd1c13b67b67655d6bcbc1f05619dcfd1fa46c81c057b17f33abab246bef9a2"
+    },
+    {
+        "path":  "send-job4-720p.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "f09ca274551fccc4d68d135044ac329a449feaef2c24d2ea38a547de5aa97204"
+    },
+    {
+        "path":  "send-job4-existing.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "da6f7c361bb613112c7a3108ed798f1845eef761075e973861f49105c1c181d1"
+    },
+    {
+        "path":  "smoke-detached-render.sh",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "9029ab60dd9b7602374e4aff7ac4c2d4f3d1ab5be245daa47ed8f6bf91269930"
+    },
+    {
+        "path":  "config/fluxos.json",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "d50adbb2000192712a4546067549f18aa870a5078e46e8998d78892183a6aea3"
+    },
+    {
+        "path":  "config/skills.json",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "8b92a4882cf5a49d71de6d924cb9ee76041053418886844e7058cf5ba441cb6e"
+    },
+    {
+        "path":  "prompts/curso.md",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "27a21ec60e9004ad192740cd3056f4d03eca85b2aa29bdd48e3aa439d30edbc8"
+    },
+    {
+        "path":  "prompts/demo.md",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "50e9a4e81e20368cc680a0479d0e897a0c31e8ea4085721ea38b5cd3f91dfeb8"
+    },
+    {
+        "path":  "prompts/explicativo.md",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "219f172072497be3ada0838988cedcdf50bb7e12e4f18d12940b08a715078bde"
+    },
+    {
+        "path":  "prompts/reel.md",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "58b1b6cb48510eb8333d2bac360015104144f9febc021d286bd147a2460a4cf9"
+    },
+    {
+        "path":  "prompts/reelinematds.md",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "803d40bb25948955e5a72da589a5d3daf51dcc7ad360a313deaa6034a57c3c27"
+    },
+    {
+        "path":  "prompts/reelpromo.md",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "4d395d86f1c2b50162e7a0b8462bcd9b1b7606565c74e7c447bda185205df3f0"
+    },
+    {
+        "path":  "src/dominio/registry.test.ts",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "7a121107bea59a88d56da27aa823fd9d13e5956d333fe9126eb9a038bda79c56"
+    },
+    {
+        "path":  "src/gateway/comandos.ts",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "c0f58095153d9cf10afaf381521ebfae950e041cd470782b4cde20ad8a7bb1f8"
+    },
+    {
+        "path":  "src/gateway/entrega.test.ts",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "1fa948217b6f92f107837a7b86700fe9d123c4749082af886b5b2f5072115987"
+    },
+    {
+        "path":  "src/gateway/entrega.ts",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "451d374ffb35ccfc4d4b3c096f413c5c3fb33a23412910b1b542ddf1f115c02e"
+    },
+    {
+        "path":  "src/gateway/notificar.test.ts",
+        "source":  "_inemaccbot_catalog",
+        "sha256":  "04264c1aa7303e84af50a07ab39b31f707792d1fb915c00d5a8c928047f815ff"
+    },
+    {
+        "path":  "smoke-codex-runner.mjs",
+        "source":  "_inemaccbot_patch",
+        "sha256":  "2f8725cf9a8dfd949a7e5bab0ba47a02850705ebaa0e1c8ae016ad8be3044560"
+    },
+    {
+        "path":  "src/index.ts",
+        "source":  "_inemaccbot_patch",
+        "sha256":  "05c04a1d5df106a61ed1e82a187ed1a59523af1a4ca1720aa2833d7663c23dfc"
+    },
+    {
+        "path":  "src/fila/runner-claude.test.ts",
+        "source":  "_inemaccbot_patch",
+        "sha256":  "c40ffab6126a48fda68a9ea0afaf022eeff2f0cd8ea8a6b57bc6d439116b5831"
+    },
+    {
+        "path":  "src/fila/runner-claude.ts",
+        "source":  "_inemaccbot_patch",
+        "sha256":  "b272adb891ec1c6fc2c84c1fb9da673966c524960860b2ac273e2c08eadf6c23"
+    },
+    {
+        "path":  "src/fila/runner-codex.test.ts",
+        "source":  "_inemaccbot_patch",
+        "sha256":  "d9df027bbed8a49a0e3a897c024dfe73952f0780735dba08009f3eb7dba19880"
+    },
+    {
+        "path":  "src/fila/runner-codex.ts",
+        "source":  "_inemaccbot_patch",
+        "sha256":  "392801328e3c9afb5d4d4d76d2bc60e6fe1156e026289754bc4c3ac2a5f936eb"
+    },
+    {
+        "path":  "gateway-smoke.mjs",
+        "source":  "_inemaccbot_live_patch",
+        "sha256":  "2f415fc9fae27a325dcfe25a59a30fead5633e09f123a4e230fba508c85782ba"
+    },
+    {
+        "path":  "skills/video-explicativo/scripts/narration-template.sh",
+        "source":  "_inemaccbot_live_patch",
+        "sha256":  "d6d5b2998fb99e96ebcffdd0cfd03317933e41ea22b940981644dd042b73a90f"
+    },
+    {
+        "path":  "src/gateway/answer.ts",
+        "source":  "_inemaccbot_live_patch",
+        "sha256":  "fa31f0b433385c7aae5ab0b4781da5d75b2d1983674f42aef64396bf92b07d74"
+    },
+    {
+        "path":  "src/gateway/interpret.ts",
+        "source":  "_inemaccbot_live_patch",
+        "sha256":  "44d8d516add9edacaab27027e7a09fa08ee1b3e757bf9b8de86acf2b53f191d1"
+    },
+    {
+        "path":  "src/gateway/mensagem.test.ts",
+        "source":  "_inemaccbot_live_patch",
+        "sha256":  "5b2295cecbe7879f94c787eb247afa09d68c7c9f251034d3bcc2e4a50dacafa6",
+        "original_sha256":  "1c1ccbb5579c7c5a20459e0df427c4681d5f948431a6e2eea6940b91d0215169",
+        "change":  "Telegram token-shaped test fixture replaced with an explicitly synthetic value"
+    }
+]
