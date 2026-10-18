@@ -21,7 +21,7 @@ def status(etapa, detalhe):
     path = pasta / 'setup-status.json'
     texto = json.dumps({'etapa': etapa, 'detalhe': detalhe,
                         'data': datetime.now(timezone.utc).isoformat()}, ensure_ascii=True)
-    with path.open('w', encoding='utf-8', opener=lambda p, f: os.open(p, f, 0o600)) as out:
+    with open(path, 'w', encoding='utf-8', opener=lambda p, f: os.open(p, f, 0o600)) as out:
         out.write(texto)
     path.chmod(0o600)
 
@@ -83,7 +83,7 @@ env_path = root / '.env'
 if env_path.exists():
     status('configuracao_existente', 'Arquivo .env ja existe; preservado')
     raise SystemExit('.env já existe. Preserve-o e edite manualmente; nada sobrescrito.')
-with env_path.open('x', encoding='utf-8', opener=lambda path, flags: os.open(path, flags, 0o600)) as env:
+with open(env_path, 'x', encoding='utf-8', opener=lambda path, flags: os.open(path, flags, 0o600)) as env:
     env.write(''.join(key + '=' + value + '\n' for key, value in values.items()))
 print('Configuração salva com permissão 600. Bot: @' + result['result'].get('username', ''))
 status('configuracao_salva', 'Arquivo .env salvo com permissao 600')

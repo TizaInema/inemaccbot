@@ -4,6 +4,8 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $ErrorActionPreference = 'Stop'
+$setupStateDir = [IO.Path]::Combine([Environment]::GetFolderPath('UserProfile'), 'projetos', 'inemaccbot', 'state')
+$null = [IO.Directory]::CreateDirectory($setupStateDir)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $form = New-Object System.Windows.Forms.Form
@@ -138,6 +140,8 @@ $activate.Add_Click({
         }
         $output = $outTask.GetAwaiter().GetResult()
         $errorText = $errTask.GetAwaiter().GetResult()
+        $safeOutput = ($output + [Environment]::NewLine + $errorText).Replace($token, '[redigido]') -replace '\d{5,}:[A-Za-z0-9_-]{20,}', '[token redigido]'
+        @{stage='resposta_ssh';code=$process.ExitCode;message=$safeOutput.Substring(0,[Math]::Min(4000,$safeOutput.Length))} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $setupStateDir 'windows-setup-status.json') -Encoding UTF8
         if ($process.ExitCode -eq 0) {
             $status.Text = 'Bot ativado! Envie /ping no Telegram. A resposta esperada e pong.'
             $tokenBox.Clear()
@@ -161,7 +165,10 @@ $activate.Add_Click({
             }
         }
     } catch {
-        $status.Text = 'Nao foi possivel concluir a conexao/configuracao. Avise para verificarmos o estado da VPS.'
+        $diagnosticPath = Join-Path $setupStateDir 'windows-setup-status.json'
+        $safeError = $_.Exception.Message.Replace($token, '[redigido]') -replace '\d{5,}:[A-Za-z0-9_-]{20,}', '[token redigido]'
+        @{stage='falha_local';message=$safeError} | ConvertTo-Json | Set-Content -LiteralPath $diagnosticPath -Encoding UTF8
+        $status.Text = 'Falha local registrada. Avise para corrigirmos o programa de configuracao.'
     } finally {
         if ($null -ne $process) { $process.Dispose() }
         $activate.Enabled = $true
