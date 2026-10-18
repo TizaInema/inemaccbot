@@ -8,7 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 venv = ROOT / '.venv-media/bin/python'
-if venv.exists() and Path(sys.executable).resolve() != venv.resolve() and os.getenv('INEMACCBOT_MEDIA_VENV') != '1':
+if venv.exists() and Path(sys.prefix).resolve() != (ROOT / '.venv-media').resolve() and os.getenv('INEMACCBOT_MEDIA_VENV') != '1':
     os.execve(str(venv), [str(venv), __file__, *sys.argv[1:]], {**os.environ, 'INEMACCBOT_MEDIA_VENV': '1'})
 from media_cpu import reel, run
 
