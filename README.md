@@ -52,6 +52,13 @@ Um `.env` existente nunca é sobrescrito. Para configuração manual, copie
 `.env.example` para `.env`, preencha no servidor e proteja com `chmod 600 .env`.
 Nunca envie tokens pelo Git. Apenas chats explicitamente autorizados são aceitos.
 
+No Windows, se houver dificuldade para colar no terminal, execute
+`powershell.exe -NoProfile -STA -File scripts/configure-windows.ps1` na copia local.
+A janela oferece um campo mascarado com botao Colar, localiza os chats privados
+apos `/start` e envia a configuracao por stdin ao SSH. O token nao e salvo no
+Windows nem passado como argumento de processo. Selecione apenas seu proprio
+chat antes de ativar. O servidor deve estar acessivel por chave SSH.
+
 Codex precisa estar autenticado (`codex login status`). Claude é opcional e
 requer autenticação própria. Codex usa sandbox `workspace-write`; cada tarefa
 trabalha na pasta de artefatos de sua skill. Integrações que dependem de escrever
