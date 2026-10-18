@@ -22,7 +22,10 @@ KOKORO = None
 
 
 def run(args, timeout=1800):
-    proc = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
+    try:
+        proc = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(Path(str(args[0])).name + ' excedeu o prazo de execução.') from None
     if proc.returncode:
         detail = proc.stderr[-1200:]
         detail = re.sub(r'(?:sk-[\w-]+|\d{5,}:[\w-]{20,})', '[redigido]', detail)
@@ -112,6 +115,7 @@ def translate(segments, workspace):
                   'Responda apenas um array JSON de strings, sem markdown. Uma string por segmento.\n' +
                   json.dumps([s['text'] for s in batch], ensure_ascii=False))
         run([os.getenv('CODEX_BIN', 'codex'), 'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+             '-c', 'model_reasoning_effort="low"', '--color', 'never',
              '-C', workspace, '--output-last-message', final, prompt], timeout=180)
         raw = final.read_text(encoding='utf-8').strip()
         raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)

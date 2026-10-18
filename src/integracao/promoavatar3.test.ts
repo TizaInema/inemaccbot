@@ -11,7 +11,7 @@
 // repo em silêncio. `preparar.py` deriva o repo da pasta-pai do PRÓPRIO script,
 // então um `script` apontando para fora levaria o layout do domínio errado.
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -19,7 +19,7 @@ import { carregarFlow, congelar } from '../dominio/flow.js';
 import { montarInput } from '../fluxos/entrada-fase.js';
 import type { Fluxo } from '../fluxos/estado.js';
 
-const PROJETOS = join(homedir(), 'projetos');
+const PROJETOS = fileURLToPath(new URL('../../..', import.meta.url));
 const REPO_DOMINIO = join(PROJETOS, 'promoavatar3');
 const SKILLS = ['reel', 'reelpromo', 'explicativo'];
 
