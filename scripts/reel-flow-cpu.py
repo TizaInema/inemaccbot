@@ -18,18 +18,22 @@ for name in ('avatar', 'ws', 'alvo', 'textos', 'saida'):
 parser.add_argument('--flow'); parser.add_argument('--cta'); parser.add_argument('--sem-legenda', action='store_true')
 args = parser.parse_args()
 text = Path(args.textos).read_text(encoding='utf-8')
+text = re.sub(r'[*_`]', '', text)
 headline = re.search(r'(?im)^(?:hook(?: do topo)?|headline|titulo|título)\s*:\s*(.+)$', text)
-title = headline.group(1).strip(' *"') if headline else args.alvo.replace('-', ' ').upper()
+title = headline.group(1).strip(' *"')[:95] if headline else args.alvo.replace('-', ' ').upper()
 speech = re.search(r'(?is)###\s*FALA[^\n]*\n(.*?)(?=\n#{1,3}\s|\Z)', text)
 caption = re.sub(r'[*_`#]', '', speech.group(1)).strip()[:360] if speech else 'Aprenda a usar inteligência artificial na prática.'
+if args.sem_legenda: caption = ''
+cta_text = ('Compartilhe e acompanhe mais ideias.' if args.alvo.endswith('-alc') else
+            'Salve e coloque em prática.' if args.alvo.endswith('-aut') else 'Saiba mais em INEMA.CLUB')
 dest = Path(args.saida); dest.parent.mkdir(parents=True, exist_ok=True)
 if args.cta and Path(args.cta).is_file():
     body = Path(args.ws) / 'corpo-cpu.mp4'; body.parent.mkdir(parents=True, exist_ok=True)
-    reel(args.avatar, body, title, caption)
+    reel(args.avatar, body, title, caption, cta_text)
     # Normaliza a CTA ao mesmo tamanho; evita concatenação incompatível.
     run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', body, '-i', args.cta,
          '-filter_complex', '[0:v]setsar=1[v0];[1:v]scale=720:1280,setsar=1[v1];[0:a]aformat=sample_rates=44100:channel_layouts=stereo[a0];[1:a]aformat=sample_rates=44100:channel_layouts=stereo[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]',
          '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-threads', '1', '-preset', 'veryfast', '-c:a', 'aac', dest])
 else:
-    reel(args.avatar, dest, title, caption)
+    reel(args.avatar, dest, title, caption, cta_text)
 print(str(dest))

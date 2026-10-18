@@ -239,7 +239,7 @@ def render(spec, output, vertical=False):
     return Path(output)
 
 
-def reel(source, output, title, caption=''):
+def reel(source, output, title, caption='', cta='Saiba mais em INEMA.CLUB'):
     from PIL import Image, ImageDraw
     meta = probe(source)
     if not any(s.get('codec_type') == 'video' for s in meta['streams']):
@@ -249,7 +249,7 @@ def reel(source, output, title, caption=''):
         draw = ImageDraw.Draw(background)
         draw.multiline_text((45, 70), wrapped(draw, title, font(40), 630), font=font(40), fill='#FFC300', spacing=12)
         draw.multiline_text((45, 800), wrapped(draw, caption, font(28), 630), font=font(28), fill='#F0EBD8', spacing=10)
-        draw.text((45, 1180), 'Saiba mais em INEMA.CLUB', fill='#FFC300', font=font(27))
+        draw.text((45, 1180), cta, fill='#FFC300', font=font(27))
         frame = Path(folder) / 'frame.png'; background.save(frame)
         run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-loop', '1', '-i', frame, '-i', source,
              '-filter_complex', '[1:v]scale=720:480:force_original_aspect_ratio=decrease,pad=720:480:(ow-iw)/2:(oh-ih)/2:black[v];[0:v][v]overlay=0:290:shortest=1[out]',
