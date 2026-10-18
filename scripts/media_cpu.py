@@ -80,7 +80,7 @@ def tts(text, output, voice='pf_dora', speed=1.0):
 
 def transcribe(path, model_name='base'):
     from faster_whisper import WhisperModel
-    cache = ROOT / 'state/models/whisper'
+    cache = Path(os.getenv('INEMACCBOT_WHISPER_CACHE', str(Path.home() / '.cache/inemaccbot/whisper')))
     model = WhisperModel(model_name, device='cpu', compute_type='int8', cpu_threads=2,
                          download_root=str(cache), local_files_only=True)
     segments, info = model.transcribe(str(path), beam_size=3, word_timestamps=True, vad_filter=True)

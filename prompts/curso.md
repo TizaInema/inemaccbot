@@ -16,3 +16,5 @@ nohup setsid bash -c 'echo $$ > "$1.pid"; "$2/.venv-media/bin/python" "$2/script
 
 Não espere o render terminar. Última linha: RENDER: {{saida}}
 Se não conseguir iniciar: ERRO: <motivo curto, sem credenciais>.
+## NÃO MEXA NA MÁQUINA
+Se faltar ferramenta ou credencial, NÃO instale. Declare ERRO: falta a dependência e pare.

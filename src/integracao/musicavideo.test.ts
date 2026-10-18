@@ -24,7 +24,7 @@ const fluxo = { id: 89, prefixo: 'MVD', versao: 1, assunto: 'balada pop sobre re
 const rodar = existsSync(join(REPO_DOMINIO, 'flow.json')) ? describe : describe.skip;
 
 rodar('musicavideo: fluxo sem agente', () => {
-  const def = congelar(carregarFlow(REPO_DOMINIO, []), REPO_DOMINIO);
+  const def = existsSync(join(REPO_DOMINIO, 'flow.json')) ? congelar(carregarFlow(REPO_DOMINIO, []), REPO_DOMINIO) : undefined!;
 
   function comandoDe(faseId: string, anterior?: string): string {
     const fase = def.fases.find((f) => f.id === faseId)!;

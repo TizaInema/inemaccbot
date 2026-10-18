@@ -27,7 +27,7 @@ def link(source, target):
     target.symlink_to(source, target_is_directory=source.is_dir())
 
 
-def install(skip_python=False):
+def install(skip_python=False, skip_skills=False):
     projects = ROOT.parent
     data = json.loads((ROOT / 'config/media-sources.json').read_text(encoding='utf-8-sig'))
     for source in data['sources']:
@@ -45,11 +45,11 @@ def install(skip_python=False):
             call(['git', '-C', dest, 'fetch', '--depth', '1', 'origin', source['commit']])
             call(['git', '-C', dest, 'checkout', '--detach', source['commit']])
     skill_root = Path.home() / '.claude/skills'
-    for skill in (ROOT / 'skills').iterdir():
+    for skill in ([] if skip_skills else (ROOT / 'skills').iterdir()):
         if (skill / 'SKILL.md').exists(): link(skill, skill_root / skill.name)
     # O motor de textos original é próprio dos repos promocionais.
     text_skill = projects / 'promoavatar/.claude/skills/inemaclub-textos'
-    if (text_skill / 'SKILL.md').exists(): link(text_skill, skill_root / 'inemaclub-textos')
+    if not skip_skills and (text_skill / 'SKILL.md').exists(): link(text_skill, skill_root / 'inemaclub-textos')
     hf = projects / 'promoavatar3/.claude/skills/reel-edita-inema/scripts/hf.sh'
     scripts = ROOT / 'skills/reel-edita-inema/scripts'
     scripts.mkdir(exist_ok=True)
@@ -84,16 +84,19 @@ def install(skip_python=False):
             if channel.startswith('lives') and channel[5:].isdigit():
                 (projects / ('yt-pub-' + channel) / 'imports/videos').mkdir(parents=True, exist_ok=True)
     if not skip_python:
-        venv = ROOT / '.venv-media'
+        venv = Path.home() / '.local/share/inemaccbot/media-venv'
+        venv.parent.mkdir(parents=True, exist_ok=True)
         if not (venv / 'bin/python').exists(): call(['python3', '-m', 'venv', '--system-site-packages', venv])
+        link(venv, ROOT / '.venv-media')
         python = venv / 'bin/python'
         call([python, '-m', 'pip', 'install', '-r', ROOT / 'requirements-media.txt'])
         # O modelo é baixado na instalação, nunca no meio de um job.
-        cache = ROOT / 'state/models/whisper'
+        cache = Path.home() / '.cache/inemaccbot/whisper'
         call([python, '-c', 'from faster_whisper import WhisperModel; WhisperModel("base",device="cpu",compute_type="int8",download_root=' + repr(str(cache)) + ')'])
     print('Fontes e skills instaladas. As chaves de serviços externos continuam no cofre, fora do Git.')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(); parser.add_argument('--skip-python', action='store_true')
-    args = parser.parse_args(); install(args.skip_python)
+    parser.add_argument('--skip-skills', action='store_true')
+    args = parser.parse_args(); install(args.skip_python, args.skip_skills)

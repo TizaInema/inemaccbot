@@ -14,3 +14,5 @@ nohup setsid bash -c 'echo $$ > "$1.pid"; "$2/.venv-media/bin/python" "$2/script
 
 Não espere terminar. Última linha: RENDER: {{saida}}
 Se não conseguir iniciar: ERRO: <motivo curto>.
+## NÃO MEXA NA MÁQUINA
+Se faltar ferramenta ou credencial, NÃO instale. Declare ERRO: falta a dependência e pare.

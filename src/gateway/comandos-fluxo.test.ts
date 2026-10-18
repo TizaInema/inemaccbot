@@ -619,7 +619,7 @@ describe('/status P#N', () => {
 
   // O verbo é o mesmo; o argumento é que diz se é job ou fluxo.
   it('/status com número continua sendo job, não fluxo', async () => {
-    fila.enfileirar({ fila: 'io', kind: 'function', tarefa: 'x', input: '{}' });
+    fila.enfileirar({ fila: 'io', kind: 'function', tarefa: 'x', input: '{}', chat_id: 9 });
     expect(await manda('/status 1')).toContain('job j1');
   });
 
