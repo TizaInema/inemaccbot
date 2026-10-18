@@ -15,7 +15,7 @@ def main():
         value = str(supplied.get(name, '') if supplied is not None else getpass.getpass(name + ' (Enter mantém o valor atual): ')).strip()
         if not value:
             continue
-        if not all(c.isalnum() or c in '-_.' for c in value):
+        if len(value) > 4096 or not all(c.isascii() and (c.isalnum() or c in '-_.~+/=') for c in value):
             raise ValueError('Formato de chave inválido; arquivo preservado.')
         lines = [l for l in lines if l.partition('=')[0].strip() != name]
         lines.append(name + '=' + value)

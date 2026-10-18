@@ -23,7 +23,7 @@ KOKORO = None
 
 def run(args, timeout=1800):
     try:
-        proc = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run([str(x) for x in args], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise RuntimeError(Path(str(args[0])).name + ' excedeu o prazo de execução.') from None
     if proc.returncode:

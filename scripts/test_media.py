@@ -13,6 +13,13 @@ import media_cpu
 
 
 class MediaTests(unittest.TestCase):
+    def test_subprocesso_nao_aguarda_stdin_do_ssh(self):
+        with patch.object(media_cpu.subprocess, 'run') as call:
+            call.return_value.returncode = 0
+            call.return_value.stdout = 'ok\n'
+            self.assertEqual(media_cpu.run(['executavel-de-teste']), 'ok')
+            self.assertEqual(call.call_args.kwargs['stdin'], subprocess.DEVNULL)
+
     def test_configuracao_por_stdin_preserva_valor_vazio_sem_expor_chave(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / '.env'; path.write_text('HEYGEN_API_KEY=valor-antigo-teste\n')
