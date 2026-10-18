@@ -83,8 +83,9 @@ def install(skip_python=False, skip_skills=False):
             channel = target.get('canal', '')
             if channel.startswith('lives') and channel[5:].isdigit():
                 (projects / ('yt-pub-' + channel) / 'imports/videos').mkdir(parents=True, exist_ok=True)
+    venv = Path.home() / '.local/share/inemaccbot/media-venv'
+    if (venv / 'bin/python').exists(): link(venv, ROOT / '.venv-media')
     if not skip_python:
-        venv = Path.home() / '.local/share/inemaccbot/media-venv'
         venv.parent.mkdir(parents=True, exist_ok=True)
         if not (venv / 'bin/python').exists(): call(['python3', '-m', 'venv', '--system-site-packages', venv])
         link(venv, ROOT / '.venv-media')

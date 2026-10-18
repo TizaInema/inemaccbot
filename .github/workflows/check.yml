@@ -15,4 +15,5 @@ jobs:
       - run: npm run build
       - run: python3 scripts/install-media.py --skip-python --skip-skills
       - run: npm test
+      - run: node --test scripts/test-migration.mjs
       - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v

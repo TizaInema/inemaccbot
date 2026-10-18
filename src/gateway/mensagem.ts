@@ -75,9 +75,18 @@ function tratarComandoDeFluxo(
   chatId: number, texto: string, deps: DepsMensagem,
 ): string | undefined {
   if (!deps.fluxos) return undefined;
+  const motor = deps.fluxos;
+  const escopo = Object.create(motor) as Fluxos;
+  escopo.status = (id) => {
+    const r = motor.status(id);
+    return r?.fluxo.chat_id === chatId ? r : undefined;
+  };
+  escopo.listarFluxos = (status) => motor.listarFluxos(status).filter(f => f.chat_id === chatId);
+  escopo.aguardandoAprovacao = () => motor.aguardandoAprovacao().filter(f => f.chat_id === chatId);
+  escopo.listarResumo = () => escopo.listarFluxos().map(f => ({id:f.id, prefixo:f.prefixo, tipo:f.tipo}));
   const registrados = deps.fluxosRegistrados ?? [];
   const depsFluxo = {
-    fluxos: deps.fluxos, registrados, chatId,
+    fluxos: escopo, registrados, chatId,
     skills: deps.defs.map((d) => d.command),
     // Jobs de skill vivos: sem fluxo, eles não apareciam em lugar nenhum do
     // painel — e quem digita `/status` está perguntando o que o bot está
