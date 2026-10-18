@@ -2,16 +2,18 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export function temChave(nome: string): boolean {
-  if (process.env[nome]?.trim()) return true;
+export function valorProvider(nome: string): string | undefined {
+  if (process.env[nome]?.trim()) return process.env[nome]?.trim();
   try {
     const texto = readFileSync(process.env.INEMACCBOT_PROVIDERS_FILE || join(homedir(), 'projetos/wifi/.env'), 'utf8');
-    return texto.split('\n').some(l => {
+    for (const l of texto.split('\n')) {
       const i = l.indexOf('=');
-      return i > 0 && l.slice(0, i).trim() === nome && !!l.slice(i + 1).trim().replace(/^['"]|['"]$/g, '');
-    });
-  } catch { return false; }
+      if (i > 0 && l.slice(0, i).trim() === nome) return l.slice(i + 1).trim().replace(/^['"]|['"]$/g, '') || undefined;
+    }
+  } catch { /* Ausência de cofre é dependência pendente. */ }
+  return undefined;
 }
+export const temChave = (nome: string): boolean => !!valorProvider(nome);
 
 export function pendenciaSkill(comando: string, raiz: string): string | undefined {
   if (['imagem', 'historia'].includes(comando) && !temChave('AGNES_API_KEY'))

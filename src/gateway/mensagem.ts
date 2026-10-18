@@ -18,7 +18,7 @@ import type { FluxoRegistrado } from '../dominio/registry-fluxos.js';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { textoDiagnostico } from '../capacidades.js';
+import { textoDiagnostico, temChave } from '../capacidades.js';
 
 import { resolverConsulta, rodarConsulta } from './consulta.js';
 import { carregarFlow } from '../dominio/flow.js';
@@ -129,6 +129,20 @@ function tratarComandoDeFluxo(
   const [bruto, ...resto] = t.split(/\s+/);
   const verbo = (bruto ?? '').toLowerCase();
   const argumento = resto.join(' ');
+  const aprovar = (ref: string): string | undefined => {
+    if (deps.raizRuntime) {
+      const id = Number(/#(\d+)$/.exec(ref)?.[1]);
+      const fluxo = escopo.status(id)?.fluxo;
+      if (fluxo) {
+        const def = JSON.parse(fluxo.definicao_json) as { fases: { tarefa: string }[] };
+        if (def.fases.some(f => f.tarefa.startsWith('heygen.')) && !temChave('HEYGEN_API_KEY'))
+          return 'Antes de aprovar, configure HEYGEN_API_KEY no cofre da VPS. O roteiro está preservado.';
+        if (def.fases.some(f => f.tarefa === 'heygen.gerar') && (!temChave('HEYGEN_AVATAR_ID') || !temChave('HEYGEN_VOICE_ID')))
+          return 'Configure HEYGEN_AVATAR_ID e HEYGEN_VOICE_ID da sua conta antes de aprovar. O roteiro está preservado.';
+      }
+    }
+    return aprovarFluxo(ref, depsFluxo);
+  };
 
   if (verbo === '/fluxos') return textoFluxos(registrados);
 
@@ -195,13 +209,13 @@ function tratarComandoDeFluxo(
       const esperando = depsFluxo.fluxos.aguardandoAprovacao();
       if (esperando.length === 1) {
         const f = esperando[0]!;
-        return aprovarFluxo(`${f.prefixo}#${f.id}`, depsFluxo) ?? '';
+        return aprovar(`${f.prefixo}#${f.id}`) ?? '';
       }
       if (!esperando.length) return 'nenhum fluxo esperando aprovação agora.';
       const quais = esperando.map((f) => `${f.prefixo}#${f.id}`).join(' · ');
       return `mais de um fluxo esperando — diga qual: ${quais}`;
     }
-    return aprovarFluxo(ref, depsFluxo) ?? `não entendi "${ref}" — use /aprovar A#9`;
+    return aprovar(ref) ?? `não entendi "${ref}" — use /aprovar A#9`;
   }
 
   if (verbo === '/limpar') {

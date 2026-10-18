@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Configura chaves no terminal privado, sem eco e sem Git."""
 import getpass
+import json
 import os
+import sys
 from pathlib import Path
 
 def main():
     target = Path(os.getenv('INEMACCBOT_PROVIDERS_FILE', str(Path.home() / 'projetos/wifi/.env')))
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = target.read_text(encoding='utf-8').splitlines() if target.exists() else []
-    for name in ('AGNES_API_KEY', 'HEYGEN_API_KEY'):
-        value = getpass.getpass(name + ' (Enter mantém o valor atual): ').strip()
+    supplied = json.load(sys.stdin) if '--stdin-json' in sys.argv else None
+    for name in ('AGNES_API_KEY', 'HEYGEN_API_KEY', 'HEYGEN_AVATAR_ID', 'HEYGEN_VOICE_ID'):
+        value = str(supplied.get(name, '') if supplied is not None else getpass.getpass(name + ' (Enter mantém o valor atual): ')).strip()
         if not value:
             continue
         if not all(c.isalnum() or c in '-_.' for c in value):

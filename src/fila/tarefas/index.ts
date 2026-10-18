@@ -1,6 +1,7 @@
 // Catálogo FECHADO de tarefas `function` (spec §9): o campo `tarefa` de um job
 // só pode ser uma chave daqui. Texto livre do usuário nunca vira nome de tarefa.
 import { readFileSync } from 'node:fs';
+import { valorProvider } from '../../capacidades.js';
 
 import type { Tarefa } from '../worker.js';
 import { criarHttpGet } from './http.js';
@@ -35,6 +36,14 @@ export function criarTarefas(opts: {
     () => lerChaveHeygen(opts.heygenEnvPath ?? '', (p) => readFileSync(p, 'utf8')),
   );
   const reelBase=criarReelMontar({disparar:disparoReal()});
+  const gerarBase = criarHeygenGerar(cliente);
+  const gerar:Tarefa = opts.cpuReelScript ? async ctx => {
+    const avatarId = valorProvider('HEYGEN_AVATAR_ID');
+    const voiceId = valorProvider('HEYGEN_VOICE_ID');
+    if (!avatarId || !voiceId) throw new Error('Configure HEYGEN_AVATAR_ID e HEYGEN_VOICE_ID da sua conta no cofre da VPS.');
+    const input = JSON.parse(ctx.job.input || '{}');
+    return gerarBase({...ctx, job:{...ctx.job, input:JSON.stringify({...input, avatarId, voiceId})}});
+  } : gerarBase;
   const reelMontar:Tarefa=opts.cpuReelScript ? async ctx=>{
     const input=JSON.parse(ctx.job.input||'{}');
     return reelBase({...ctx,job:{...ctx.job,input:JSON.stringify({...input,script:opts.cpuReelScript})}});
@@ -47,7 +56,7 @@ export function criarTarefas(opts: {
     'heygen.baixar': criarHeygenBaixar(cliente),
     // Só é alcançada por um fluxo criado com `| api` — a fase `gerar` não
     // existe na definição congelada de um fluxo normal.
-    'heygen.gerar': criarHeygenGerar(cliente),
+    'heygen.gerar': gerar,
     // Mesma tarefa, outra AUTENTICAÇÃO: a CLI autentica como a conta web e
     // debita da assinatura em vez da carteira em dólar.
     'heygen.gerar-creditos': criarHeygenGerar(

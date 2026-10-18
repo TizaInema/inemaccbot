@@ -2,6 +2,8 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,6 +13,18 @@ import media_cpu
 
 
 class MediaTests(unittest.TestCase):
+    def test_configuracao_por_stdin_preserva_valor_vazio_sem_expor_chave(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / '.env'; path.write_text('HEYGEN_API_KEY=valor-antigo-teste\n')
+            env = dict(os.environ, INEMACCBOT_PROVIDERS_FILE=str(path))
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('configure-providers.py')), '--stdin-json'],
+                input=json.dumps({'AGNES_API_KEY': 'valor-novo-teste', 'HEYGEN_API_KEY': ''}),
+                text=True, capture_output=True, env=env)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn('HEYGEN_API_KEY=valor-antigo-teste', path.read_text())
+            self.assertIn('AGNES_API_KEY=valor-novo-teste', path.read_text())
+            self.assertNotIn('valor-novo-teste', result.stdout + result.stderr)
+
     def test_bloqueia_rede_privada_e_credencial_em_url(self):
         for url in ('file:///etc/passwd', 'https://user:pass@example.org'):
             with self.assertRaises(ValueError): media_cpu.public_url(url)
