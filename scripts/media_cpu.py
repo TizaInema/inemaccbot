@@ -79,11 +79,20 @@ def tts(text, output, voice='pf_dora', speed=1.0):
 
 
 def transcribe(path, model_name='base'):
+    import soundfile as sf
     from faster_whisper import WhisperModel
+    duration = float(probe(path)['format'].get('duration', 0))
+    if duration <= 0 or duration > 3600:
+        raise ValueError('A transcrição CPU aceita mídia de até uma hora com duração identificável.')
     cache = Path(os.getenv('INEMACCBOT_WHISPER_CACHE', str(Path.home() / '.cache/inemaccbot/whisper')))
     model = WhisperModel(model_name, device='cpu', compute_type='int8', cpu_threads=2,
                          download_root=str(cache), local_files_only=True)
-    segments, info = model.transcribe(str(path), beam_size=3, word_timestamps=True, vad_filter=True)
+    # Decodifica com o FFmpeg da VPS: evita incompatibilidades de API entre PyAV e Whisper.
+    with tempfile.TemporaryDirectory() as folder:
+        decoded = Path(folder) / 'audio.wav'
+        run(['ffmpeg', '-nostdin', '-y', '-v', 'error', '-i', path, '-vn', '-ac', '1', '-ar', '16000', decoded])
+        samples, _ = sf.read(decoded, dtype='float32')
+    segments, info = model.transcribe(samples, beam_size=3, word_timestamps=True, vad_filter=True)
     result = []
     for s in segments:
         result.append({'start': s.start, 'end': s.end, 'text': s.text.strip(),

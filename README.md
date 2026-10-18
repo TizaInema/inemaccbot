@@ -1,82 +1,60 @@
-# inemaccbot
+﻿# inemaccbot
 
-Bot pessoal de produção de conteúdo pelo Telegram, com tarefas persistidas em
-SQLite e execução por Codex ou Claude Code. Requer Node.js 22.18 ou superior.
+Bot Telegram para pedir transcrições, dublagens, vídeos e fluxos promocionais. Usa fila SQLite persistente, notificações de conclusão, aprovação de roteiros e retomada após reinício.
 
-## Estado da recuperação
+O motor original foi recuperado de `inematds/inemaccbot` (versão e commit em `upstream-source.json`). Os projetos de mídia têm revisões fixadas em `config/media-sources.json`. A adaptação desta VPS usa CPU e Codex autenticado.
 
-A branch `recovery/local-patches` preserva os 33 arquivos recuperados. O commit
-inicial contém um manifesto de origem e hashes. O restante do runtime foi
-reconstruído: configuração, banco, filas, worker, Telegram, catálogo e prompts.
-Não é uma restauração integral do motor original.
+## Comandos
 
-O núcleo suporta comandos, pedidos em linguagem natural, filas, recuperação de
-leases, cancelamento e entrega de arquivos. As dez skills do catálogo dependem
-das respectivas ferramentas e credenciais instaladas no servidor. O diagnóstico
-mostra a presença dos SKILL.md e executores; isso não garante que cada integração
-tenha todas as suas dependências configuradas.
+- `/ping`, `/ajuda`, `/skills`, `/diagnostico`: conexão, catálogo e dependências.
+- `/jobs`, `/fila`, `/status <id>`, `/cancelar <id>`, `/refazer <id>`: trabalhos do chat.
+- `transcrever: <link ou arquivo>`: Whisper local, resultado em texto.
+- `dublar: <link ou arquivo>`: transcrição, tradução pelo Codex e voz PT-BR, em MP4.
+- `explicativo: <assunto> | vertical`, `curso: <assunto>`, `demo: <URL e objetivo>`: roteiro, narração e montagem CPU. Demo usa capturas reais do site público.
+- `reel: <arquivo>`, `reelpromo: <arquivo>`, `reelinematds: <arquivo>`: vídeo vertical com headline, resumo e CTA.
+- `imagem: <descrição>`, `historia: <roteiro>`: geração pela conta Agnes configurada pelo proprietário.
+- `/promoclub <assunto>`, `/promoavatar <assunto>`, `/promoavatar3 <assunto>`: textos por público, aprovação e integração de avatares. `/aprovar A#1`, `/pausar A#1`, `/retomar A#1`, `/dados A#1` controlam o fluxo.
 
-Os fluxos promocionais (`promoclub`, `promoavatar`, `promoavatar3`) permanecem
-indisponíveis: os contratos e projetos originais não foram recuperados. O bot
-recusa esses pedidos explicitamente. O diagnóstico HTTP arbitrário está desativado.
+A voz CPU é Kokoro `pf_dora`, sem clonagem Bella/Rachel. A montagem CPU usa cartões e enquadramento vertical; os projetos originais ficam disponíveis para consulta. A publicação automática no YouTube exige um publicador separado: `livesN` é a pasta local de entrega.
 
-## Desenvolvimento
+## Instalação Linux
 
-```sh
-npm ci --ignore-scripts
+```bash
+npm ci
 npm run build
-npm test
-npm run doctor
-```
-
-Os testes não chamam serviços reais nem precisam de tokens. Os testes que usam
-process groups e binários Linux rodam na VPS e no GitHub Actions; são pulados no Windows.
-
-## Instalação na VPS
-
-Pasta esperada pelo serviço: `/root/projetos/inemaccbot`.
-
-```sh
-cd /root/projetos/inemaccbot
-npm ci --ignore-scripts
-npm run build
-npm test
-install -m 644 deploy/inemaccbot.service /root/.config/systemd/user/inemaccbot.service
-XDG_RUNTIME_DIR=/run/user/0 systemctl --user daemon-reload
+python3 scripts/install-media.py
 python3 scripts/configure.py
 ```
 
-O configurador pede o token de forma oculta, valida-o com `getMe`, pede os IDs
-dos chats autorizados e cria `.env` com permissão 600. Depois ativa o serviço.
-Um `.env` existente nunca é sobrescrito. Para configuração manual, copie
-`.env.example` para `.env`, preencha no servidor e proteja com `chmod 600 .env`.
-Nunca envie tokens pelo Git. Apenas chats explicitamente autorizados são aceitos.
+O instalador cria um ambiente Python em `~/.local/share/inemaccbot/media-venv`, ligado a `.venv-media`, e baixa o Whisper base para `~/.cache/inemaccbot/whisper`. Requer FFmpeg, fonte DejaVu e os arquivos Kokoro em `~/.cache/hyperframes/tts/{models,voices}`. Não substitui credenciais existentes nem atualiza dependências com alterações locais.
 
-No Windows, se houver dificuldade para colar no terminal, execute
-`powershell.exe -NoProfile -STA -File scripts/configure-windows.ps1` na copia local.
-A janela oferece um campo mascarado com botao Colar, localiza os chats privados
-apos `/start` e envia a configuracao por stdin ao SSH. O token nao e salvo no
-Windows nem passado como argumento de processo. Selecione apenas seu proprio
-chat antes de ativar. O servidor deve estar acessivel por chave SSH.
+No `.env`, use `MOTOR_PADRAO=codex`, `CODEX_BIN=/usr/local/bin/codex`, `CLAUDE_BIN=/usr/bin/claude`, `INEMACCBOT_CPU_MEDIA=1`, além do token, IDs permitidos e caminhos do banco/estado. O Codex precisa estar autenticado. `INEMACCBOT_WRITE_DIRS` declara diretórios extras de escrita separados por `:`; o motor mantém sandbox de escrita no workspace.
 
-Codex precisa estar autenticado (`codex login status`). Claude é opcional e
-requer autenticação própria. Codex usa sandbox `workspace-write`; cada tarefa
-trabalha na pasta de artefatos de sua skill. Integrações que dependem de escrever
-em outras pastas precisam ser adaptadas antes de serem usadas.
+Para Agnes e HeyGen, configure as chaves no terminal privado da VPS:
 
-```sh
-XDG_RUNTIME_DIR=/run/user/0 systemctl --user status inemaccbot --no-pager
-XDG_RUNTIME_DIR=/run/user/0 journalctl --user -u inemaccbot -n 50 --no-pager
+```bash
+python3 scripts/configure-providers.py
 ```
 
-Após configurar, envie `/ping` pelo Telegram; a resposta esperada é `pong`.
-Use `/skills`, `/jobs`, `/fila`, `/status <id>`, `/cancelar <id>` e `/refazer <id>`.
-Exemplo: `explicativo: O que é RAG | vertical` (requer a skill e o render configurados).
-Anexos podem ser usados em legendas substituindo `{{anexo}}` pelo caminho baixado.
+O arquivo `~/projetos/wifi/.env` fica com modo 600 e fora do Git. Agnes requer conta e disponibilidade do modelo. HeyGen requer chave, créditos e identificadores de avatar/voz da própria conta; os identificadores herdados dos projetos devem ser conferidos antes de gerar. A aprovação do roteiro permanece antes da geração. Não envie chaves pelo Telegram ou chat.
 
-## Dados e backups
+## Verificação e atualização
 
-`.env`, bancos SQLite, logs, `state/`, resultados e credenciais estão no
-`.gitignore`. Faça backups dos dados separadamente, com o serviço parado ou por
-backup consistente do SQLite. O Git guarda o código, não as credenciais e o
-histórico de tarefas do bot antigo, que não foram recuperados.
+```bash
+npm test -- --maxWorkers=2
+node --test scripts/test-migration.mjs
+python3 -m unittest discover -s scripts -p 'test_*.py' -v
+.venv-media/bin/python scripts/smoke-media.py
+node scripts/smoke-engine.mjs
+npm run doctor
+```
+
+A amostra real testa narração, transcrição, MP4 com áudio e reel 720x1280, sem APIs pagas. Resultados em `state/smoke-media`.
+
+A atualização do banco legado usa `scripts/migrate-legacy.mjs`: lê a origem sem escrita e cria um banco separado, preservando IDs e histórico. `scripts/deploy-media.py --revision <SHA validado>` verifica fila vazia e clone limpo, salva banco/configuração/commit em `/root/backups`, atualiza e recupera a versão anterior se falhar. O banco legado continua preservado.
+
+```bash
+XDG_RUNTIME_DIR=/run/user/0 systemctl --user status inemaccbot --no-pager
+```
+
+Credenciais, bancos, logs, ambientes Python e artefatos ficam fora do Git. O bot responde somente aos IDs permitidos e restringe os comandos de jobs e fluxos ao chat proprietário.

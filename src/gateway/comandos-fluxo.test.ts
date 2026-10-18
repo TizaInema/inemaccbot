@@ -82,6 +82,15 @@ describe('/ajuda em dois níveis', () => {
 });
 
 describe('/fluxos', () => {
+  it('um chat não consulta, cancela ou aprova fluxo de outro', async () => {
+    await manda('/brinquedo Conteúdo privado');
+    const foreign = (text: string) => tratarMensagem(42, text, deps());
+    expect(await foreign('/status B#1')).toContain('não existe');
+    expect(await foreign('/cancelar B#1')).toContain('não existe');
+    expect(await foreign('/aprovar B#1')).toContain('não existe');
+    expect(await foreign('/status')).not.toContain('Conteúdo privado');
+    expect(fluxos.status(1)?.fluxo.status).toBe('rodando');
+  });
   it('lista o catálogo', async () => {
     expect(await manda('/fluxos')).toContain('brinquedo');
   });

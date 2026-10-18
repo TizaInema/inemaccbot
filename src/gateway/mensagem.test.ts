@@ -55,6 +55,13 @@ function deps(respostas: string[]): DepsMensagem {
 }
 
 describe('tratarMensagem', () => {
+  it('isola listagem, leitura e cancelamento entre chats', async () => {
+    const job = fila.enfileirar({fila:'texto', kind:'agent', tarefa:'transcrever', input:'{"entrada":"privado"}', chat_id:42});
+    expect(await tratarMensagem(9, `/status ${job.id}`, deps([]))).toContain('não existe neste chat');
+    expect(await tratarMensagem(9, `/cancelar ${job.id}`, deps([]))).toContain('não existe neste chat');
+    expect(fila.obter(job.id)?.status).toBe('queued');
+    expect(await tratarMensagem(9, '/jobs', deps([]))).not.toContain('privado');
+  });
   it('/ajuda é o resumo e /ajuda tudo é a lista inteira', async () => {
     const d = deps([]);
     const curta = await tratarMensagem(1, '/ajuda', d);
