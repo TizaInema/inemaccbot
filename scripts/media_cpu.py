@@ -167,14 +167,15 @@ def font(size):
 
 
 def wrapped(draw, text, face, width):
-    lines, line = [], ''
-    for word in str(text).split():
-        candidate = (line + ' ' + word).strip()
-        if draw.textlength(candidate, font=face) > width and line:
-            lines.append(line); line = word
-        else:
-            line = candidate
-    if line:
+    lines = []
+    for paragraph in str(text).split('\n'):
+        line = ''
+        for word in paragraph.split():
+            candidate = (line + ' ' + word).strip()
+            if draw.textlength(candidate, font=face) > width and line:
+                lines.append(line); line = word
+            else:
+                line = candidate
         lines.append(line)
     return '\n'.join(lines)
 
@@ -185,17 +186,23 @@ def card(scene, path, vertical=False):
     image = Image.new('RGB', (width, height), '#0D1321')
     draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((35, 35, width - 35, height - 35), radius=28, fill='#1D2D44', outline='#3E5C76', width=2)
-    y = 100
+    y = 100; x = 70; text_width = width - 140
+    title_size = 44 if vertical else 52
+    body_size = 27 if vertical else 30
     if scene.get('image'):
         photo = Image.open(scene['image']).convert('RGB')
-        photo.thumbnail((width - 110, height // 2))
-        image.paste(photo, ((width - photo.width) // 2, 75)); y = 100 + photo.height
-    title = wrapped(draw, scene.get('title', ''), font(44 if vertical else 52), width - 140)
-    draw.multiline_text((70, y), title, fill='#FFC300', font=font(44 if vertical else 52), spacing=12)
-    y += int(draw.multiline_textbbox((0, 0), title, font=font(44 if vertical else 52), spacing=12)[3]) + 45
+        if vertical:
+            photo.thumbnail((width - 110, 430))
+            image.paste(photo, ((width - photo.width) // 2, 75)); y = 105 + photo.height
+        else:
+            photo.thumbnail((620, 440))
+            image.paste(photo, (60, 120)); x = 730; text_width = 470; title_size = 36; body_size = 24
+    title = wrapped(draw, scene.get('title', ''), font(title_size), text_width)
+    draw.multiline_text((x, y), title, fill='#FFC300', font=font(title_size), spacing=12)
+    y += int(draw.multiline_textbbox((0, 0), title, font=font(title_size), spacing=12)[3]) + 45
     body = '\n\n'.join('• ' + str(s) for s in scene.get('bullets', [])) or scene.get('caption', '')
-    body = wrapped(draw, body, font(27 if vertical else 30), width - 150)
-    draw.multiline_text((75, y), body, fill='#F0EBD8', font=font(27 if vertical else 30), spacing=13)
+    body = wrapped(draw, body, font(body_size), text_width)
+    draw.multiline_text((x, y), body, fill='#F0EBD8', font=font(body_size), spacing=13)
     draw.text((70, height - 90), 'INEMA.CLUB', font=font(25), fill='#FFC300')
     image.save(path)
     return width, height
