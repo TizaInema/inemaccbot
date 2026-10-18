@@ -2,8 +2,10 @@
   {
     "command": "transcrever",
     "fila": "texto",
-    "kind": "agent",
-    "prompt": "prompts/transcrever.md",
+    "kind": "function",
+    "repo": "inemaccbot",
+    "comando": "{{repo}}/.venv-media/bin/python {{repo}}/scripts/media_cpu.py transcribe {{input}} --output {{saida}}.transcricao.txt",
+    "aguarda_artefato": true,
     "artefato_exts": [
       "txt",
       "srt"
@@ -21,8 +23,10 @@
   {
     "command": "dublar",
     "fila": "texto",
-    "kind": "agent",
-    "prompt": "prompts/dublar.md",
+    "kind": "function",
+    "repo": "inemaccbot",
+    "comando": "{{repo}}/.venv-media/bin/python {{repo}}/scripts/media_cpu.py dub {{input}} --output {{saida}}.dublado.mp4",
+    "aguarda_artefato": true,
     "artefato_exts": [
       "mp4"
     ],
@@ -217,6 +221,8 @@
     "command": "historia",
     "fila": "cpu",
     "kind": "agent",
+    "aguarda_artefato": true,
+    "timeout_setup_segundos": 1800,
     "prompt": "prompts/historia.md",
     "artefato_exts": [
       "mp4"
@@ -235,7 +241,7 @@
         "descricao": "nome curto da história (sem espaço); vazio = derivado do título"
       }
     },
-    "descricao": "história/conto → filme animado narrado (Agnes AI, US$ 0 · skill videos-agnes)",
+    "descricao": "história/conto → filme animado narrado (requer chave Agnes · skill videos-agnes)",
     "exemplo": "historia: Era uma vez três balões que queriam ver o mar... | nome=baloes"
   },
   {
@@ -265,7 +271,7 @@
         "descricao": "resolução: 1K, 2K ou 4K"
       }
     },
-    "descricao": "gera uma imagem pela API Agnes (US$ 0 · skill imagens-agnes)",
+    "descricao": "gera uma imagem pela API Agnes (requer chave própria · skill imagens-agnes)",
     "exemplo": "imagem: uma raposa ruiva numa floresta nevada, cinematográfico | ratio=16:9"
   }
 ]

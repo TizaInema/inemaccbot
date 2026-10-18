@@ -41,7 +41,7 @@ describe('registro de motores', () => {
   });
 });
 
-describe.skipIf(process.platform === 'win32')('execução real de subprocesso (usa /bin/echo como binário)', () => {
+describe('execução real de subprocesso (usa /bin/echo como binário)', () => {
   it('devolve o stdout', async () => {
     const r = new ClaudeRunner('/bin/echo');
     const saida = await r.iniciar(ctx('sonnet', 'low')).aguardar();

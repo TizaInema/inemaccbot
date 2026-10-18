@@ -3,7 +3,8 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, delimiter, isAbsolute } from 'node:path';
+import { ehNivel, nivel } from '../modelos.js';
 
 import { RUNNERS, type ContextoExecucao, type Execucao, type Runner } from './runner.js';
 import { LIMITE_SAIDA_BYTES } from './runner-claude.js';
@@ -34,15 +35,27 @@ export function promptCodex(ctx: ContextoExecucao): string {
   ].join('\n');
 }
 
-export function argumentosCodex(ctx: ContextoExecucao, outputFile: string): string[] {
+export function mapaModelos(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  return Object.fromEntries((env.CODEX_MODELOS ?? '').split(',').map(s=>s.split('=').map(x=>x.trim())).filter(p=>p.length===2&&p[0]&&p[1]));
+}
+export const esforcoCodex = (e:string):string => e==='xhigh'||e==='max'?'high':e;
+export function argumentosCodex(ctx: ContextoExecucao, mapaOuArquivo: Record<string,string>|string = mapaModelos()): string[] {
+  const outputFile=typeof mapaOuArquivo==='string'?mapaOuArquivo:undefined;
+  const mapa=typeof mapaOuArquivo==='string'?mapaModelos():mapaOuArquivo;
+  const modelo=mapa[ctx.perfil.modelo] ?? (ehNivel(ctx.perfil.modelo)?nivel('codex',ctx.perfil.modelo).modelo:undefined);
+  const roots=(process.env.INEMACCBOT_WRITE_DIRS??'').split(delimiter).filter(p=>p&&isAbsolute(p));
   return [
     'exec',
     '--skip-git-repo-check',
     '--sandbox', 'workspace-write',
+    '-c', 'sandbox_workspace_write.network_access=true',
+    ...roots.flatMap(path=>['--add-dir',path]),
+    ...(modelo?['--model',modelo]:[]),
+    '-c', `model_reasoning_effort="${esforcoCodex(ctx.perfil.esforco)}"`,
     '--color', 'never',
     '-C', ctx.cwd,
-    '--output-last-message', outputFile,
-    promptCodex(ctx),
+    ...(outputFile?['--output-last-message', outputFile]:[]),
+    ctx.prompt,
   ];
 }
 
@@ -61,7 +74,7 @@ export class CodexRunner implements Runner {
   constructor(opts: OpcoesCodexRunner | string = {}) {
     const o = typeof opts === 'string' ? { binario: opts } : opts;
     this.binario = o.binario ?? 'codex';
-    this.montarArgs = o.montarArgs ?? argumentosCodex;
+    this.montarArgs = o.montarArgs ?? ((ctx,output)=>argumentosCodex({...ctx,prompt:promptCodex(ctx)},output));
     this.limiteSaida = o.limiteSaidaBytes ?? LIMITE_SAIDA_BYTES;
   }
 

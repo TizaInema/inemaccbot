@@ -1,59 +1,303 @@
-import { basename } from 'node:path';
-import { readFile } from 'node:fs/promises';
+// Adaptador Telegram (grammy). ÚNICO arquivo do gateway que conhece a API do
+// Telegram — tudo que é política (allowlist, corte, log) vive em `rotear`,
+// que é pura e testável sem grammy. `criarBot` é só a fiação.
+import { Bot, InputFile } from 'grammy';
 import type { Config } from '../config.js';
-export const LIMITE_MENSAGEM=4000;
-export interface Transporte { responder(chatId:number,texto:string):Promise<void>;enviarDocumento?(chatId:number,path:string):Promise<void> }
-export interface TelegramUpdate {update_id:number;message?:{chat:{id:number};text?:string;caption?:string;document?:{file_id:string;file_name?:string};video?:{file_id:string;file_name?:string}}}
-export async function apiTelegram(token:string,method:string,body:Record<string,unknown>|FormData,signal?:AbortSignal):Promise<unknown> {
-  const form=body instanceof FormData;
-  const response=await fetch(`https://api.telegram.org/bot${token}/${method}`,{
-    method:'POST',headers:form?undefined:{'content-type':'application/json'},body:form?body:JSON.stringify(body),
-    signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45_000)]):AbortSignal.timeout(45_000),
-  });
-  const data=await response.json() as {ok:boolean;result:unknown;description?:string};
-  if(!response.ok||!data.ok) throw new Error(`Telegram ${response.status}: ${data.description ?? 'requisição recusada'}`);
-  return data.result;
-}
-export function criarBot(cfg:Config,deps:{aoComando:(chatId:number,texto:string)=>Promise<string>;log:(s:string)=>void;baixarAnexo?:(id:string,nome?:string)=>Promise<string>}):{bot:{init():Promise<void>;start():Promise<void>;stop():Promise<void>};transporte:Transporte} {
-  const controller=new AbortController(); let offset=0; let polling:Promise<void>|undefined;
-  const allowed=new Set(cfg.allowedChatIds);
-  const transporte:Transporte={
-    async responder(chatId,texto) {
-      for(let i=0;i<texto.length;i+=LIMITE_MENSAGEM) await apiTelegram(cfg.botToken,'sendMessage',{chat_id:chatId,text:texto.slice(i,i+LIMITE_MENSAGEM),link_preview_options:{is_disabled:true}});
-    },
-    async enviarDocumento(chatId,path) {
-      const form=new FormData();form.set('chat_id',String(chatId));form.set('document',new Blob([await readFile(path)]),basename(path));
-      await apiTelegram(cfg.botToken,'sendDocument',form);
-    },
+import { comandoDeAnexo, LIMITE_ANEXO_BYTES, type BaixarAnexo } from './midia.js';
+import { ehPingDePareamento, emPareamento, mensagemDePareamento } from './pareamento.js';
+
+/** Telegram rejeita qualquer mensagem acima de 4096 chars (UTF-16 code units) com
+ * "400: Bad Request: message is too long". `limit` fica um pouco abaixo disso de propósito —
+ * Telegram conta entidades/formatação além do texto puro, e isso dá margem sem complicar a conta.
+ *
+ * Portado do v1 (inemaccvbot/src/reply.ts, splitForTelegram) — o corte de 4096 é conhecimento
+ * duro já pago em produção; não reescrever do zero.
+ *
+ * Estratégia de corte, em ordem de preferência (nunca perde caracteres, nunca gera chunk vazio):
+ *   1. quebra em fronteira de parágrafo/linha (`\n`);
+ *   2. se uma "linha" sozinha ainda estoura o limite, quebra em espaços;
+ *   3. se um único token (sem espaço) ainda estoura o limite, corta na marra (último recurso).
+ */
+/** Teto de UMA mensagem. Exportado porque a entrega precisa do MESMO número:
+ * decidir "isto cabe numa mensagem?" com um valor próprio criaria duas fontes
+ * de verdade para o mesmo limite do Telegram. */
+export const LIMITE_MENSAGEM = 4_000;
+
+export function cortar(texto: string, limite = LIMITE_MENSAGEM): string[] {
+  if (texto.length <= limite) return texto.length ? [texto] : [];
+
+  const chunks: string[] = [];
+  let current = '';
+
+  const flush = (): void => {
+    if (current) { chunks.push(current); current = ''; }
   };
-  const handle=async(update:TelegramUpdate)=> {
-    const msg=update.message;if(!msg||!allowed.has(msg.chat.id)) return;
-    let texto=msg.text ?? msg.caption ?? '';
-    const anexo=msg.document ?? msg.video;
-    if(anexo&&deps.baixarAnexo) {
-      const path=await deps.baixarAnexo(anexo.file_id,anexo.file_name);
-      texto=texto?texto.replace('{{anexo}}',path):`Arquivo recebido: ${path}. Use um comando de /skills com esse caminho.`;
-      if(!msg.caption) {await transporte.responder(msg.chat.id,texto);return;}
-    }
-    if(!texto) return;
-    try {await transporte.responder(msg.chat.id,await deps.aoComando(msg.chat.id,texto));}
-    catch(e) {deps.log(`comando falhou: ${String(e)}`);await transporte.responder(msg.chat.id,'Não consegui concluir o pedido. Consulte /status ou tente novamente.');}
-  };
-  const loop=async()=> {
-    while(!controller.signal.aborted) {
-      try {
-        const updates=await apiTelegram(cfg.botToken,'getUpdates',{offset,timeout:30,allowed_updates:['message']},controller.signal) as TelegramUpdate[];
-        for(const update of updates) {await handle(update);offset=update.update_id+1;}
-      } catch(e) {
-        if(controller.signal.aborted) return;
-        // Deixe o systemd reiniciar falhas persistentes sem manter um processo surdo.
-        throw e;
+
+  const lines = texto.split('\n');
+  lines.forEach((line, i) => {
+    const sep = i < lines.length - 1 ? '\n' : '';
+    let piece = line + sep;
+
+    while (piece.length > 0) {
+      if (current.length + piece.length <= limite) {
+        current += piece;
+        piece = '';
+        continue;
       }
+
+      if (current.length > 0) { flush(); continue; }
+
+      if (piece.length <= limite) { current = piece; piece = ''; continue; }
+
+      const spaceIdx = piece.lastIndexOf(' ', limite);
+      if (spaceIdx > 0) {
+        current = piece.slice(0, spaceIdx + 1);
+        piece = piece.slice(spaceIdx + 1);
+        flush();
+        continue;
+      }
+
+      current = piece.slice(0, limite);
+      piece = piece.slice(limite);
+      flush();
+    }
+  });
+  flush();
+
+  return chunks;
+}
+
+/** Mensagem que o chat vê quando `aoComando` explode. Genérica de propósito —
+ * o texto real do erro (que pode conter caminho interno, stack, etc.) nunca sai
+ * daqui; só vai pro log. */
+const MENSAGEM_ERRO_GENERICA = 'Deu erro por aqui. Já ficou registrado, tenta de novo daqui a pouco.';
+
+/** Política completa de roteamento de uma mensagem recebida, pura — sem grammy.
+ * chat fora da allowlist: [] + log da rejeição, `aoComando` nunca chamado (spec §9,
+ * esse log é o único rastro de uma tentativa não autorizada).
+ * chat permitido: chama `aoComando`, corta a resposta, devolve os pedaços.
+ * `aoComando` lançando: um pedaço genérico (nunca o erro verbatim) + log do erro real. */
+export async function rotear(
+  entrada: { chatId: number; texto: string },
+  deps: {
+    permitido: (chatId: number) => boolean;
+    aoComando: (chatId: number, texto: string) => Promise<string>;
+    log: (m: string) => void;
+    /** Tenta parear e devolve a resposta, ou `null` quando o bot JÁ tem dono.
+     *  Ausente (ou devolvendo `null`) é o caso normal, e aí a rejeição é
+     *  exatamente a de sempre: silêncio. É o que garante que um bot já pareado
+     *  nunca ecoe chat id para estranho. */
+    parear?: (chatId: number) => string | null;
+  },
+): Promise<string[]> {
+  const { chatId, texto } = entrada;
+
+  if (!deps.permitido(chatId)) {
+    if (deps.parear && ehPingDePareamento(texto)) {
+      const resposta = deps.parear(chatId);
+      if (resposta !== null) return cortar(resposta);
+    }
+    deps.log(`gateway: mensagem rejeitada — chat ${chatId} fora da allowlist`);
+    return [];
+  }
+
+  try {
+    const resposta = await deps.aoComando(chatId, texto);
+    return cortar(resposta);
+  } catch (erro) {
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
+    deps.log(`gateway: erro ao processar comando do chat ${chatId}: ${detalhe}`);
+    return [MENSAGEM_ERRO_GENERICA];
+  }
+}
+
+/** Envia os `pedacos` SEQUENCIALMENTE, aguardando cada um antes de disparar o
+ * próximo. Em paralelo (`pedacos.map(enviar)` sem await) o Telegram entrega
+ * fora de ordem, e uma resposta longa chega embaralhada no chat — por isso o
+ * `for...of` com `await`, nunca `Promise.all`/`map`. Único lugar que drena
+ * pedaços; `criarBot` e `Transporte.responder` chamam esta função em vez de
+ * reimplementar o loop cada um por conta própria. */
+export async function enviarPedacos(
+  enviar: (texto: string) => Promise<void>,
+  pedacos: string[],
+): Promise<void> {
+  for (const pedaco of pedacos) {
+    await enviar(pedaco);
+  }
+}
+
+/** Seam usado por tarefas futuras (ex.: notificar conclusão de job) sem que
+ * quem chama precise conhecer grammy. */
+export interface Transporte {
+  responder(chatId: number, texto: string): Promise<void>;
+  /** Envia um arquivo do disco como documento. Opcional: um transporte de teste
+   * que só verifica texto não precisa implementar. */
+  enviarDocumento?(chatId: number, caminho: string): Promise<void>;
+}
+
+/**
+ * Anexo recebido: baixa e transforma a legenda em comando. Pura em relação ao
+ * Telegram (o download é injetado), então testável sem rede.
+ *
+ * Sem legenda, NÃO tenta adivinhar o que fazer com o arquivo: confirma o
+ * recebimento e devolve o caminho, que é o que torna `thumb <caminho>` (e
+ * qualquer skill que aceite caminho) alcançável.
+ */
+export async function rotearAnexo(
+  entrada: { chatId: number; fileId: string; nomeOriginal: string; legenda: string },
+  deps: {
+    permitido: (chatId: number) => boolean;
+    baixar: (fileId: string, nomeOriginal: string) => Promise<string>;
+    aoComando: (chatId: number, texto: string) => Promise<string>;
+    log: (m: string) => void;
+  },
+): Promise<string[]> {
+  if (!deps.permitido(entrada.chatId)) {
+    deps.log(`gateway: anexo rejeitado — chat ${entrada.chatId} fora da allowlist`);
+    return [];
+  }
+
+  let caminho: string;
+  try {
+    caminho = await deps.baixar(entrada.fileId, entrada.nomeOriginal);
+  } catch (erro) {
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
+    deps.log(`gateway: falha ao baixar anexo do chat ${entrada.chatId}: ${detalhe}`);
+    // Genérica de propósito: a URL da API do Telegram carrega o token no path.
+    return ['não consegui baixar esse arquivo.'];
+  }
+
+  const comando = comandoDeAnexo(entrada.legenda, caminho);
+  if (!comando) return cortar(`recebi o arquivo: ${caminho}`);
+
+  try {
+    return cortar(await deps.aoComando(entrada.chatId, comando));
+  } catch (erro) {
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
+    deps.log(`gateway: erro ao processar anexo do chat ${entrada.chatId}: ${detalhe}`);
+    return [MENSAGEM_ERRO_GENERICA];
+  }
+}
+
+/** Único ponto de fiação com grammy. Não tem política — só liga `rotear` ao
+ * `bot.on('message:text')` e ao envio dos pedaços. */
+export function criarBot(
+  cfg: Config,
+  deps: {
+    aoComando: (chatId: number, texto: string) => Promise<string>;
+    log?: (m: string) => void;
+    /** Ausente: o bot ignora anexos (é o comportamento da etapa 1). */
+    baixarAnexo?: BaixarAnexo;
+    /** Grava a allowlist nova onde ela sobrevive a um restart (o `.env`).
+     *  Injetada porque o gateway não conhece disco — e porque o teste do
+     *  pareamento não pode escrever no `.env` de ninguém. */
+    persistirAllowlist?: (ids: number[]) => void;
+    /**
+     * Depois de responder — é onde os avisos que o COMANDO empilhou saem.
+     *
+     * OBRIGATÓRIO de propósito. Como opcional, o adaptador real simplesmente
+     * não o repassou e `/dados` seguiu mudo, com o teste passando porque o
+     * transporte falso chamava o hook direto. Exigir o campo faz o compilador
+     * cobrar quem monta o bot; quem não tem o que drenar passa um no-op.
+     */
+    aposResponder: () => Promise<void>;
+  },
+): { bot: Bot; transporte: Transporte } {
+  const bot = new Bot(cfg.botToken);
+
+  const permitido = (chatId: number): boolean => cfg.chatsPermitidos.includes(chatId);
+  // Sem `log` injetado, fica em silêncio (no-op) em vez de vazar pro `console` —
+  // uma fiação esquecida assim é silenciosa nos testes, não barulhenta no sink errado.
+  const log = deps.log ?? ((): void => {});
+
+  // O estado é consultado A CADA mensagem, não uma vez na construção: parear na
+  // construção deixaria a porta aberta para sempre, e o SEGUNDO /ping tomaria o
+  // bot do primeiro. `null` significa "não estou em pareamento" e devolve o
+  // fluxo à rejeição normal.
+  const parear = !deps.persistirAllowlist
+    ? undefined
+    : (chatId: number): string | null => {
+        if (!emPareamento(cfg.chatsPermitidos)) return null;
+        // MEMÓRIA PRIMEIRO, e in-place: `permitido` fecha sobre ESTE array, e
+        // reatribuir `cfg.chatsPermitidos` deixaria o closure vendo o antigo —
+        // o bot diria "pareado" e rejeitaria a mensagem seguinte até reiniciar.
+        cfg.chatsPermitidos.splice(0, cfg.chatsPermitidos.length, chatId);
+        log(`gateway: pareado — chat ${chatId} virou dono do bot`);
+        try {
+          deps.persistirAllowlist?.(cfg.chatsPermitidos);
+        } catch (erro) {
+          // Disco read-only não pode custar a sessão: o chat continua valendo
+          // até o próximo restart, e o log diz o que pôr no .env na mão.
+          const detalhe = erro instanceof Error ? erro.message : String(erro);
+          log(`gateway: pareado em memória, mas falhei ao gravar o .env (${detalhe}) — ponha ALLOWED_CHAT_IDS=${chatId} à mão`);
+        }
+        return mensagemDePareamento(chatId);
+      };
+
+  /** O dreno nunca derruba o handler: perder um aviso é ruim, ficar surdo é
+   *  pior — a mesma regra do §8 que vale no dreno do worker. */
+  const soltarPendentes = async (): Promise<void> => {
+    try {
+      await deps.aposResponder();
+    } catch (erro) {
+      log(`gateway: dreno pós-resposta falhou: ${(erro as Error).message}`);
     }
   };
-  return {transporte,bot:{
-    async init(){await apiTelegram(cfg.botToken,'getMe',{});await apiTelegram(cfg.botToken,'deleteWebhook',{drop_pending_updates:false});},
-    start(){polling??=loop();return polling;},
-    async stop(){controller.abort();await polling?.catch(()=>{});},
-  }};
+
+  bot.on('message:text', async (ctx) => {
+    const pedacos = await rotear(
+      { chatId: ctx.chat.id, texto: ctx.message.text },
+      { permitido, aoComando: deps.aoComando, log, parear },
+    );
+    await enviarPedacos(async (pedaco) => { await ctx.reply(pedaco); }, pedacos);
+    await soltarPendentes();
+  });
+
+  // Documento, vídeo e áudio entram pelo MESMO caminho: o que interessa é o
+  // `file_id` e o nome, e o resto é decisão da skill.
+  if (deps.baixarAnexo) {
+    const baixar = deps.baixarAnexo;
+    bot.on(['message:document', 'message:video', 'message:audio', 'message:voice'], async (ctx) => {
+      const m = ctx.message;
+      const arquivo = m?.document ?? m?.video ?? m?.audio ?? m?.voice;
+      if (!arquivo) return;
+      // O TAMANHO vem no próprio update — conferir aqui evita uma ida à API que
+      // já se sabe perdida, e é a diferença entre "não consegui baixar esse
+      // arquivo" e uma frase que diz o que fazer.
+      //
+      // O teto de 20 MB existia e era INALCANÇÁVEL: o `getFile` responde 400
+      // para arquivo grande, e o `throw` do 400 acontecia ANTES da linha que
+      // checa `file_size`. Foi o que o dono viu em 2026-08-24 ao mandar um
+      // vídeo pelo chat — mensagem genérica para um limite conhecido.
+      const tamanho = (arquivo as { file_size?: number }).file_size ?? 0;
+      if (tamanho > LIMITE_ANEXO_BYTES) {
+        const mb = (tamanho / 1024 / 1024).toFixed(0);
+        await ctx.reply(
+          `esse arquivo tem ${mb} MB e a API do Telegram só deixa um bot baixar até 20 MB.\n`
+          + 'Mande o CAMINHO no disco (`analisevideo: /caminho/video.mp4`) ou um link.',
+        );
+        return;
+      }
+      const nome =
+        (m.document?.file_name ?? m.audio?.file_name)
+        ?? `anexo.${m.video ? 'mp4' : m.voice ? 'ogg' : 'bin'}`;
+      const pedacos = await rotearAnexo(
+        { chatId: ctx.chat.id, fileId: arquivo.file_id, nomeOriginal: nome, legenda: m.caption ?? '' },
+        { permitido, baixar, aoComando: deps.aoComando, log },
+      );
+      await enviarPedacos(async (pedaco) => { await ctx.reply(pedaco); }, pedacos);
+      await soltarPendentes();
+    });
+  }
+
+  const transporte: Transporte = {
+    async responder(chatId: number, texto: string): Promise<void> {
+      await enviarPedacos(async (pedaco) => { await bot.api.sendMessage(chatId, pedaco); }, cortar(texto));
+    },
+    async enviarDocumento(chatId: number, caminho: string): Promise<void> {
+      await bot.api.sendDocument(chatId, new InputFile(caminho));
+    },
+  };
+
+  return { bot, transporte };
 }

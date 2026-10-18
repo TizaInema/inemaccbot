@@ -1,0 +1,141 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+import { criarHeygenEstudio } from './heygen-estudio.js';
+import type { ClienteHeygen } from './heygen.js';
+import { AindaNao, type ContextoTarefa } from '../types.js';
+
+function ctx(input: string, over: Partial<ContextoTarefa> = {}): ContextoTarefa {
+  return {
+    job: { input, criado_em: 0 } as never,
+    fila: {} as never,
+    agora: () => 1_000,
+    log: () => {},
+    sinal: new AbortController().signal,
+    aindaNao: (m: string) => { throw new AindaNao(m); },
+    ...over,
+  } as ContextoTarefa;
+}
+
+function cliente(over: Partial<ClienteHeygen> = {}): ClienteHeygen {
+  return {
+    porTitulo: async () => new Map(),
+    urlDe: async () => null,
+    baixar: async () => {},
+    gerar: async () => { throw new Error('a rota do estúdio não usa a API de geração'); },
+    saldo: async () => null,
+    ...over,
+  };
+}
+
+const opts = (rodar: NonNullable<Parameters<typeof criarHeygenEstudio>[1]['rodar']>) => ({
+  perfil: '/perfil', script: '/repo/scripts/heygen-estudio.mjs', rodar,
+});
+const entrada = JSON.stringify({ titulo: 'A32-jovens-v1', texto: 'Olá. É a fala com acento.' });
+
+describe('heygen.estudio: o estúdio por script', () => {
+  it('chama o script com título, perfil e a fala EM ARQUIVO', async () => {
+    let args: string[] = [];
+    const tarefa = criarHeygenEstudio(cliente(), opts(async (a) => {
+      args = a;
+      return { codigo: 0, saida: 'RESULT: A32-jovens-v1' };
+    }));
+    await expect(tarefa(ctx(entrada))).resolves.toBe('A32-jovens-v1');
+    expect(args[0]).toMatch(/heygen-estudio\.mjs$/);
+    expect(args).toContain('--titulo');
+    expect(args).toContain('A32-jovens-v1');
+    expect(args).toContain('--perfil');
+    // A fala NUNCA vai na linha de comando: acento dentro de aspas de shell é a
+    // classe de bug que a receita antiga de xclip existia para evitar.
+    expect(args.join(' ')).not.toContain('acento');
+    const arq = args[args.indexOf('--fala-arquivo') + 1]!;
+    expect(readFileSync(arq, 'utf8')).toBe('Olá. É a fala com acento.');
+  });
+
+  it('NÃO gera de novo quando o título já está no estúdio — trava de cobrança dupla', async () => {
+    const tarefa = criarHeygenEstudio(
+      cliente({
+        porTitulo: async () => new Map([['A32-jovens-v1', { videoId: 'v1', status: 'pending' } as never]]),
+      }),
+      opts(async () => { throw new Error('não deve rodar o script'); }),
+    );
+    await expect(tarefa(ctx(entrada))).resolves.toBe('A32-jovens-v1');
+  });
+
+  it('um RASCUNHO não conta como enviado: o script continua dele', async () => {
+    let rodou = false;
+    const tarefa = criarHeygenEstudio(
+      cliente({
+        porTitulo: async () => new Map([['A32-jovens-v1', { videoId: 'v1', status: 'draft' } as never]]),
+      }),
+      opts(async () => { rodou = true; return { codigo: 0, saida: '' }; }),
+    );
+    await expect(tarefa(ctx(entrada))).resolves.toBe('A32-jovens-v1');
+    expect(rodou).toBe(true);
+  });
+
+  it('leva o motivo do script para o erro do job, não "exit 3"', async () => {
+    const tarefa = criarHeygenEstudio(cliente(), opts(async () => ({
+      codigo: 3,
+      saida: '02:10:01 buscando\nERRO: 3 cards com o nome exato "TEMPLATE-AVATAR" (esperado 1)\n',
+    })));
+    await expect(tarefa(ctx(entrada))).rejects.toThrow(/3 cards com o nome exato/);
+  });
+
+  it('recusa input sem texto — vídeo mudo não é falha silenciosa', async () => {
+    const tarefa = criarHeygenEstudio(cliente(), opts(async () => ({ codigo: 0, saida: '' })));
+    const semTexto = JSON.stringify({ titulo: 'A32-jovens-v1', texto: '  ' });
+    await expect(tarefa(ctx(semTexto))).rejects.toThrow(/sem texto/);
+  });
+
+  it('estoura o prazo da fase em vez de tentar para sempre', async () => {
+    const tarefa = criarHeygenEstudio(cliente(), opts(async () => ({ codigo: 0, saida: '' })));
+    const comPrazo = JSON.stringify({
+      titulo: 'A32-jovens-v1', texto: 'oi', espera: { intervalo: 60, timeout: 100 },
+    });
+    await expect(tarefa(ctx(comPrazo, { agora: () => 5_000 }))).rejects.toThrow(/não foi enviado/);
+  });
+
+  it('conta o prazo da primeira tentativa, não do tempo parado na fila', async () => {
+    // Um lote de 36 alvos nasce no mesmo segundo numa fila serial: quem sai do
+    // fim da fila chega com `criado_em` velho e ainda assim tem direito ao
+    // prazo inteiro. Sem isto, ele falhava em segundos sem abrir o navegador.
+    let rodou = false;
+    const tarefa = criarHeygenEstudio(cliente(), opts(async () => {
+      rodou = true;
+      return { codigo: 0, saida: '' };
+    }));
+    const comPrazo = JSON.stringify({
+      titulo: 'A32-jovens-v1', texto: 'oi', espera: { intervalo: 60, timeout: 100 },
+    });
+    const job = { input: comPrazo, criado_em: 0, iniciado_em: 5_000 } as never;
+    await expect(tarefa(ctx(comPrazo, { job, agora: () => 5_010 }))).resolves.toBe('A32-jovens-v1');
+    expect(rodou).toBe(true);
+  });
+
+  it('não começa quando o worker já largou o job', async () => {
+    const c = new AbortController();
+    c.abort(new Error('desligando'));
+    const tarefa = criarHeygenEstudio(cliente(), opts(async () => {
+      throw new Error('não deve rodar o script');
+    }));
+    await expect(tarefa(ctx(entrada, { sinal: c.signal }))).rejects.toThrow(/desligando/);
+  });
+});
+
+// `locator.fill: Timeout` não diz QUAL campo. Quando o Playwright estoura
+// sozinho — sem passar pelo `morrer` do script — o que resta é o último passo
+// anunciado. Sem ele, o C#110 deixou 36 fases com a mesma linha muda
+// (2026-08-26) e o diagnóstico começou do zero.
+describe('erro sem linha ERRO:', () => {
+  it('carrega o último passo anunciado', async () => {
+    const tarefa = criarHeygenEstudio(cliente(), opts(async () => ({
+      codigo: 1,
+      saida: '04:01:02 abrindo Projetos\n04:01:09 buscando "TEMPLATE-AVATAR"\n'
+        + 'locator.fill: Timeout 45000ms exceeded.\n',
+    })));
+    // O ÚLTIMO passo, não o primeiro: é onde o script estava quando travou.
+    await expect(tarefa(ctx(entrada))).rejects
+      .toThrow(/último passo: 04:01:09 buscando "TEMPLATE-AVATAR"/);
+  });
+});

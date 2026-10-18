@@ -1,39 +1,319 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { isAbsolute, resolve, relative } from 'node:path';
-import { FILAS } from '../fila/filas.js';
-import type { Fila, Perfil } from '../fila/types.js';
-export interface Campo { tipo:'texto'|'bandeira';padrao:string;descricao:string;usa?:'entrega' }
+// Registry de skills: o CATÁLOGO FECHADO de tarefas que o chat consegue disparar
+// (spec §9 — `tarefa` só pode ser um nome presente aqui; texto livre do usuário
+// nunca vira nome de comando).
+//
+// No v1 isto era um `skills.json` sem validação nenhuma: um campo errado só
+// aparecia quando o job já estava rodando e o CLI reclamava. Aqui a validação é
+// forte e roda no BOOT — registry inválido derruba o serviço, do mesmo jeito que
+// checksum de migration divergente. Subir com um catálogo que não entendemos é
+// pior do que não subir.
+//
+// Vale para skills (uma etapa, sem estado). Fluxos são outro registry, etapa 5.
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
+
+import type { Fila, Kind } from '../fila/types.js';
+import type { PerfilParcial } from './perfil.js';
+
 export interface SkillDef {
-  command:string;fila:Fila;kind:'agent'|'function';prompt:string;artefato_exts:string[];
-  max_tentativas:number;timeout_segundos:number;timeout_setup_segundos?:number;
-  aceita_destino:boolean;descricao:string;exemplo:string;aguarda_artefato?:boolean;
-  perfil?:Partial<Perfil>;campos:Record<string,Campo>;
+  /** O verbo digitado no chat: `transcrever: <link>`. Único no registry. */
+  command: string;
+  fila: Fila;
+  kind: Kind;
+  /** Caminho do arquivo de prompt, relativo à raiz do repo. Vazio quando a
+   *  skill declara `comando` — aí não há agente para instruir. */
+  prompt: string;
+  /**
+   * O COMANDO da skill, quando quem roda é o BOT (`kind: function`).
+   *
+   * Marcadores: `{{repo}}` (obrigatório), `{{input}}` (obrigatório), `{{saida}}`
+   * e os `campos` declarados. Todos entram ASPADOS — texto do chat não vira
+   * comando. É a mesma ideia do `comando` de fase (`dominio/flow.ts`), na rota
+   * de skill.
+   */
+  comando?: string;
+  /**
+   * Pasta do repo EXTERNO que esta skill dirige (quando ela veio de um
+   * manifesto de integração). É NOME DE PASTA, nunca caminho absoluto: quem
+   * resolve contra o `PROJETOS_DIR` é a execução — o mesmo contrato dos fluxos,
+   * e o que faz o `config/skills.json` versionado valer noutra máquina.
+   *
+   * Serve ao `{{repo}}` do prompt: o gerador de manifesto manda o prompt citar
+   * `{{repo}}/script.sh` em vez de caminho de máquina, e sem isto o placeholder
+   * chegaria sem valor — o job morria na montagem do prompt.
+   */
+  repo?: string;
+  /** Extensões aceitas no `RESULT:` — a primeira é a preferida. */
+  artefato_exts: string[];
+  max_tentativas: number;
+  /** Teto de parede da execução. Sem isto um agente travado ocupa um slot da
+   * fila para sempre: o heartbeat renova o lease e nada notifica. */
+  timeout_segundos: number;
+  /** Perfil desta skill (precedência 3 do §1.5); campos ausentes caem no default. */
+  perfil?: PerfilParcial;
+  /** Aceita `| livesN` para copiar o artefato ao destino. */
+  aceita_destino: boolean;
+  /**
+   * Campos que ESTA skill aceita no comando, além de destino e perfil.
+   *
+   * Existe para não repetir o erro do v1: lá o parser conhecia `vertical`,
+   * `pesquisa`, `narracao`, `visuais` e `mover` por nome, e cada skill nova
+   * exigia editá-lo. Aqui quem declara é a skill, e o parser só confere contra a
+   * declaração.
+   *
+   * Todo valor chega ao prompt como string (bandeira vira `sim`/`não`), e
+   * `renderizarPrompt` FALHA se o template não usar uma variável declarada —
+   * então campo declarado e esquecido no prompt é erro de teste, não silêncio.
+   */
+  campos: Record<string, CampoDef>;
+  /**
+   * A tarefa dispara trabalho DESTACADO e depois vigia o artefato aparecer, em
+   * vez de esperar o agente terminar (etapa 3, §1.3 do plano). Render precisa
+   * disso: um `systemctl restart` no meio de 40 minutos de vídeo mataria o job.
+   */
+  aguarda_artefato: boolean;
+  /**
+   * Teto do AGENTE quando a skill espera artefato — o prazo dele para montar o
+   * material e DISPARAR o passo destacado (o prazo do trabalho em si é o
+   * `timeout_segundos`).
+   *
+   * Precisa ser por skill, não uma constante: em `explicativo` o agente monta o
+   * HTML e sai em minutos, mas em `reel` ele roda o pipeline criativo inteiro
+   * INLINE (corte, B-roll, composição, revisor) e só o render final vai
+   * destacado — um teto de 20 min mataria todo job de reel antes de ele
+   * disparar qualquer coisa.
+   */
+  timeout_setup_segundos?: number;
+  descricao: string;
+  exemplo: string;
 }
-export function validarSkills(raw:unknown,raiz:string):SkillDef[] {
-  if(!Array.isArray(raw)||!raw.length) throw new Error('catálogo vazio ou inválido');
-  const seen=new Set<string>();
-  return raw.map((item)=> {
-    if(!item || typeof item!=='object') throw new Error('entrada inválida');
-    const d=item as SkillDef;
-    if(!/^[a-z][a-z0-9_-]*$/.test(d.command)) throw new Error('command inválido');
-    if(seen.has(d.command)) throw new Error('command duplicado'); seen.add(d.command);
-    if(!FILAS.includes(d.fila)) throw new Error('fila inválida');
-    if(!['agent','function'].includes(d.kind)) throw new Error('kind inválido');
-    if(typeof d.prompt!=='string'||isAbsolute(d.prompt)||d.prompt.split(/[\\/]/).includes('..')||relative(raiz,resolve(raiz,d.prompt)).startsWith('..')) throw new Error('prompt deve ser relativo à raiz');
-    const path=resolve(raiz,d.prompt);
-    if(!existsSync(path)||!readFileSync(path,'utf8').trim()) throw new Error(`prompt ausente ou vazio: ${d.prompt}`);
-    if(!Array.isArray(d.artefato_exts)||!d.artefato_exts.length||d.artefato_exts.some(e=>typeof e!=='string'||!/^\.?[a-z0-9]+$/i.test(e))) throw new Error('artefato_exts inválido');
-    for(const key of ['max_tentativas','timeout_segundos'] as const) if(!Number.isInteger(d[key])||d[key]<=0) throw new Error(`${key} inválido`);
-    if(d.timeout_setup_segundos!==undefined && (!Number.isInteger(d.timeout_setup_segundos)||d.timeout_setup_segundos<=0||d.timeout_setup_segundos>d.timeout_segundos)) throw new Error('timeout_setup_segundos inválido');
-    if(typeof d.aceita_destino!=='boolean'||typeof d.descricao!=='string'||typeof d.exemplo!=='string') throw new Error('metadados inválidos');
-    const campos=d.campos ?? {};
-    for(const [name,c] of Object.entries(campos)) if(!/^[a-z][a-z0-9_]*$/.test(name)||!['texto','bandeira'].includes(c.tipo)||typeof c.padrao!=='string') throw new Error('campos inválidos');
-    return {...d,artefato_exts:d.artefato_exts.map(e=>e.replace(/^\./,'').toLowerCase()),campos,perfil:d.perfil&&Object.keys(d.perfil).length?d.perfil:undefined};
+
+/**
+ * `bandeira`: presente no comando = ligada (`| vertical`). Vira `sim`/`não`.
+ * `texto`: `| curso skillsx` ou `| curso=skillsx`. Sem espaço no valor — estes
+ * valores viram nome de arquivo na entrega, e espaço ali quebra tudo que
+ * re-splita argv (regra que o v1 já aplicava a `curso`/`modulo`).
+ */
+export interface CampoDef {
+  tipo: 'bandeira' | 'texto';
+  /** Usado quando o campo não vem no comando. Bandeira: `sim`/`não`. */
+  padrao: string;
+  /**
+   * Quem consome o campo:
+   *   `prompt`  (default) — vira variável do template, e o teste do registry
+   *                         EXIGE que o prompt a use;
+   *   `entrega` — é decisão do gateway depois do job pronto (`mover`), e o
+   *               prompt NÃO deve conhecê-la: o agente não move arquivo.
+   *
+   * A distinção nasceu de um teste vermelho: sem ela, `mover` teria de aparecer
+   * no prompt do reel só para satisfazer a guarda, dando ao agente uma
+   * instrução que não é dele.
+   */
+  usa?: 'prompt' | 'entrega';
+  descricao?: string;
+}
+
+const USOS_CAMPO = new Set(['prompt', 'entrega']);
+
+const TIPOS_CAMPO = new Set(['bandeira', 'texto']);
+// Exportada porque o validador de MANIFESTO (`manifesto.ts`) confere a mesma
+// lista: duas cópias divergiriam no dia em que uma fila nova entrar.
+export const FILAS_VALIDAS = new Set<Fila>(['render', 'navegador', 'texto', 'io', 'cpu']);
+const KINDS_VALIDOS = new Set<Kind>(['agent', 'function']);
+/** Um comando é digitado no chat e casado por igualdade: sem espaço, sem `|`,
+ * sem `:` — os três separadores da gramática de comando. */
+export const COMANDO_VALIDO = /^[a-z][a-z0-9-]{1,30}$/;
+
+function erro(indice: number, campo: string, detalhe: string): never {
+  throw new Error(`registry de skills: entrada ${indice} (${campo}): ${detalhe}`);
+}
+
+function exigirTexto(v: unknown, i: number, campo: string): string {
+  if (typeof v !== 'string' || v.trim() === '') erro(i, campo, 'faltando ou vazio');
+  return (v as string).trim();
+}
+
+function exigirInteiroPositivo(v: unknown, i: number, campo: string): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
+    erro(i, campo, `precisa ser inteiro > 0 (veio ${JSON.stringify(v)})`);
+  }
+  return v as number;
+}
+
+function validarPerfil(v: unknown, i: number): PerfilParcial | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'object' || Array.isArray(v)) erro(i, 'perfil', 'precisa ser objeto');
+  const p = v as Record<string, unknown>;
+  const saida: PerfilParcial = {};
+  for (const campo of ['motor', 'modelo', 'esforco'] as const) {
+    if (p[campo] === undefined) continue;
+    saida[campo] = exigirTexto(p[campo], i, `perfil.${campo}`);
+  }
+  // O VALOR de modelo/esforço é validado por `resolverPerfil` (dominio/perfil.ts),
+  // que é quem conhece o ranking — duplicar a lista aqui criaria duas fontes.
+  return Object.keys(saida).length ? saida : undefined;
+}
+
+/** Nome de campo é digitado no chat e vira variável de prompt: as duas coisas
+ * exigem a mesma forma conservadora. */
+const NOME_CAMPO = /^[a-z][a-z0-9_]{0,20}$/;
+
+/** Nomes que a gramática já usa para outra coisa — declarar um deles faria o
+ * campo da skill ser comido silenciosamente pelo parser. */
+const RESERVADOS = new Set(['motor', 'modelo', 'esforco', 'input', 'saida', 'repo']);
+
+function validarCampos(v: unknown, i: number, command: string): Record<string, CampoDef> {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== 'object' || Array.isArray(v)) erro(i, 'campos', 'precisa ser objeto');
+  const saida: Record<string, CampoDef> = {};
+  for (const [nome, bruto] of Object.entries(v as Record<string, unknown>)) {
+    if (!NOME_CAMPO.test(nome)) erro(i, `campos.${nome}`, 'nome inválido (minúsculas, dígitos, "_")');
+    if (RESERVADOS.has(nome)) {
+      erro(i, `campos.${nome}`, `"${nome}" é reservado pela gramática — a skill "${command}" nunca receberia esse valor`);
+    }
+    if (typeof bruto !== 'object' || bruto === null || Array.isArray(bruto)) {
+      erro(i, `campos.${nome}`, 'precisa ser objeto { tipo, padrao }');
+    }
+    const c = bruto as Record<string, unknown>;
+    const tipo = exigirTexto(c.tipo, i, `campos.${nome}.tipo`);
+    if (!TIPOS_CAMPO.has(tipo)) erro(i, `campos.${nome}.tipo`, `"${tipo}" — use bandeira ou texto`);
+    const padrao = typeof c.padrao === 'string' ? c.padrao : '';
+    if (tipo === 'bandeira' && !['sim', 'não'].includes(padrao)) {
+      erro(i, `campos.${nome}.padrao`, 'bandeira aceita só "sim" ou "não"');
+    }
+    if (/\s/.test(padrao)) erro(i, `campos.${nome}.padrao`, 'sem espaço (o valor vira nome de arquivo)');
+    const usa = c.usa === undefined ? 'prompt' : exigirTexto(c.usa, i, `campos.${nome}.usa`);
+    if (!USOS_CAMPO.has(usa)) erro(i, `campos.${nome}.usa`, `"${usa}" — use prompt ou entrega`);
+    saida[nome] = {
+      tipo: tipo as CampoDef['tipo'],
+      padrao,
+      usa: usa as CampoDef['usa'],
+      ...(typeof c.descricao === 'string' ? { descricao: c.descricao } : {}),
+    };
+  }
+  return saida;
+}
+
+/**
+ * Valida o conteúdo já parseado. Separado de `carregarSkills` para o teste poder
+ * exercitar cada regra sem escrever arquivo no disco.
+ *
+ * `raiz` é usada só para conferir que o arquivo de prompt EXISTE — o conteúdo é
+ * lido na hora do job, para que editar um prompt não exija reiniciar o serviço.
+ * (Fluxo é diferente: lá a definição é congelada, §3.4. Skill não tem estado, e
+ * "rodar de novo do zero" é aceitável por definição — §1.1.)
+ */
+export function validarSkills(dados: unknown, raiz: string): SkillDef[] {
+  if (!Array.isArray(dados)) throw new Error('registry de skills: o arquivo precisa ser um array');
+  if (dados.length === 0) throw new Error('registry de skills: array vazio — nenhuma skill disponível');
+
+  const vistos = new Set<string>();
+  return dados.map((bruta, i) => {
+    if (typeof bruta !== 'object' || bruta === null || Array.isArray(bruta)) {
+      erro(i, 'entrada', 'precisa ser objeto');
+    }
+    const d = bruta as Record<string, unknown>;
+
+    const command = exigirTexto(d.command, i, 'command');
+    if (!COMANDO_VALIDO.test(command)) {
+      erro(i, 'command', `"${command}" — use minúsculas, dígitos e hífen (sem espaço, ":" ou "|")`);
+    }
+    if (vistos.has(command)) erro(i, 'command', `"${command}" duplicado no registry`);
+    vistos.add(command);
+
+    const fila = exigirTexto(d.fila, i, 'fila') as Fila;
+    if (!FILAS_VALIDAS.has(fila)) {
+      erro(i, 'fila', `"${fila}" não existe (válidas: ${[...FILAS_VALIDAS].join(', ')})`);
+    }
+    const kind = exigirTexto(d.kind, i, 'kind') as Kind;
+    if (!KINDS_VALIDOS.has(kind)) erro(i, 'kind', `"${kind}" não existe (agent | function)`);
+
+    // SKILL COM COMANDO: a rota `cli.rodar` da rota de skill. Quando a skill
+    // declara `comando`, quem executa é o BOT — não há prompt, não há agente.
+    //
+    // O caso que motivou: o `analisevideo` pagava um modelo para montar UMA
+    // linha de bash, e o modelo mandava o script para segundo plano (proibido
+    // no prompt, em negrito) e encerrava o turno. O job morria sem contrato, e
+    // a árvore de processos levava a análise junto — duas tentativas, dois
+    // downloads de 22 MB, nenhuma análise (2026-08-21). É a mesma falha que o
+    // musicavideo teve como fluxo, e o mesmo conserto.
+    const comando = d.comando === undefined ? undefined : exigirTexto(d.comando, i, 'comando');
+    if (comando !== undefined) {
+      if (kind !== 'function') erro(i, 'kind', 'skill com `comando` é kind=function — quem roda é o bot');
+      if (!comando.includes('{{repo}}')) {
+        erro(i, 'comando', 'precisa citar {{repo}} — caminho fixo não sobrevive a outra máquina');
+      }
+      if (!comando.includes('{{input}}')) {
+        erro(i, 'comando', 'precisa citar {{input}} — sem a entrada do usuário o comando é sempre o mesmo');
+      }
+      if (d.repo === undefined) erro(i, 'repo', 'skill com `comando` precisa dizer em que repo ele roda');
+      if (d.prompt !== undefined) erro(i, 'prompt', 'skill com `comando` não tem prompt: quem roda é o bot');
+    }
+    const prompt = comando === undefined ? exigirTexto(d.prompt, i, 'prompt') : '';
+    if (isAbsolute(prompt) || prompt.includes('..')) {
+      erro(i, 'prompt', 'precisa ser caminho relativo à raiz do repo, sem ".."');
+    }
+    if (d.repo !== undefined) {
+      const r = exigirTexto(d.repo, i, 'repo');
+      if (isAbsolute(r) || r.includes('..') || r.includes('/')) {
+        erro(i, 'repo', 'precisa ser só o NOME da pasta do clone (resolvido contra PROJETOS_DIR)');
+      }
+    }
+    const caminhoPrompt = resolve(raiz, prompt);
+    if (comando === undefined && (!existsSync(caminhoPrompt) || !statSync(caminhoPrompt).isFile() || statSync(caminhoPrompt).size === 0)) {
+      erro(i, 'prompt', `arquivo ausente ou vazio: ${prompt}`);
+    }
+
+    if (!Array.isArray(d.artefato_exts) || d.artefato_exts.length === 0) {
+      erro(i, 'artefato_exts', 'precisa ser um array não vazio (ex.: ["txt","srt"])');
+    }
+    const artefato_exts = (d.artefato_exts as unknown[]).map((e, k) => {
+      const ext = exigirTexto(e, i, `artefato_exts[${k}]`).replace(/^\./, '').toLowerCase();
+      if (!/^[a-z0-9]{1,5}$/.test(ext)) erro(i, `artefato_exts[${k}]`, `extensão inválida: "${ext}"`);
+      return ext;
+    });
+
+    return {
+      command,
+      fila,
+      kind,
+      prompt,
+      ...(comando === undefined ? {} : { comando }),
+      ...(d.repo === undefined ? {} : { repo: d.repo as string }),
+      artefato_exts,
+      max_tentativas: exigirInteiroPositivo(d.max_tentativas, i, 'max_tentativas'),
+      timeout_segundos: exigirInteiroPositivo(d.timeout_segundos, i, 'timeout_segundos'),
+      perfil: validarPerfil(d.perfil, i),
+      aceita_destino: d.aceita_destino === true,
+      campos: validarCampos(d.campos, i, command),
+      aguarda_artefato: d.aguarda_artefato === true,
+      ...(d.timeout_setup_segundos === undefined
+        ? {}
+        : { timeout_setup_segundos: exigirInteiroPositivo(d.timeout_setup_segundos, i, 'timeout_setup_segundos') }),
+      descricao: exigirTexto(d.descricao, i, 'descricao'),
+      exemplo: exigirTexto(d.exemplo, i, 'exemplo'),
+    };
   });
 }
-export function carregarSkills(path:string,raiz:string):SkillDef[] {
-  let text:string; try {text=readFileSync(path,'utf8');}catch{throw new Error(`não consegui ler catálogo: ${path}`);}
-  let raw:unknown;try{raw=JSON.parse(text.replace(/^\uFEFF/,''));}catch{throw new Error('JSON inválido no catálogo');}
-  return validarSkills(raw,raiz);
+
+export function carregarSkills(caminhoJson: string, raiz: string): SkillDef[] {
+  let texto: string;
+  try {
+    texto = readFileSync(caminhoJson, 'utf8');
+  } catch {
+    throw new Error(`registry de skills: não consegui ler ${caminhoJson}`);
+  }
+  let dados: unknown;
+  try {
+    dados = JSON.parse(texto);
+  } catch (e) {
+    throw new Error(`registry de skills: JSON inválido em ${caminhoJson}: ${(e as Error).message}`);
+  }
+  return validarSkills(dados, raiz);
 }
-export const acharSkill=(defs:SkillDef[],name:string):SkillDef|undefined=>defs.find(d=>d.command===name);
+
+/** Busca por comando. `undefined` (e não exceção) porque quem chama é o gateway,
+ * que trata "não é skill" como texto livre, não como erro. */
+export function acharSkill(defs: SkillDef[], command: string): SkillDef | undefined {
+  return defs.find((d) => d.command === command);
+}

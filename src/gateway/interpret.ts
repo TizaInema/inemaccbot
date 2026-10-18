@@ -49,12 +49,9 @@ export function montarPromptInterpret(texto: string, defs: SkillDef[], destinos:
   ].join('\n');
 }
 
-export function normalizarSaidaInteracao(bruto: string): string {
-  const limpo = bruto.trim();
-  const resultado = limpo.match(/^\s*(?:[-*]\s*)?`?RESULT:\s*([\s\S]*?)`?\s*$/i);
-  return (resultado?.[1] ?? limpo).trim();
+export function normalizarSaidaInteracao(bruto:string):string {
+  return bruto.trim().replace(/^RESULT:\s*/i,'').trim();
 }
-
 function extrairJson(bruto: string): unknown {
   const limpo = normalizarSaidaInteracao(bruto).replace(/^```(?:json)?/m, '').replace(/```$/m, '').trim();
   return JSON.parse(limpo);
@@ -122,14 +119,14 @@ export async function interpretar(texto: string, deps: DepsInterpret): Promise<I
     await exec.limpar();
   }
 
-    const limpo = normalizarSaidaInteracao(bruto);
-    if (limpo.startsWith('RECUSAR:')) {
-      return { tipo: 'recusa', motivo: limpo.slice('RECUSAR:'.length).trim() };
+  bruto=normalizarSaidaInteracao(bruto);
+  if (bruto.trim().startsWith('RECUSAR:')) {
+    return { tipo: 'recusa', motivo: bruto.trim().slice('RECUSAR:'.length).trim() };
   }
 
   let dados: unknown;
   try {
-      dados = extrairJson(limpo);
+    dados = extrairJson(bruto);
   } catch {
     return { tipo: 'recusa', motivo: 'não entendi o pedido.' };
   }

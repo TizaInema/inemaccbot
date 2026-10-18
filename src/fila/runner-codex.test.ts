@@ -1,66 +1,86 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { argumentosCodex, CodexRunner, promptCodex } from './runner-codex.js';
+import { CodexRunner, argumentosCodex, esforcoCodex, mapaModelos } from './runner-codex.js';
 import { RUNNERS } from './runner.js';
 
-const ctx = () => ({
-  prompt: 'faça X\nRESULT: /tmp/instrucao.txt',
-  cwd: '/tmp',
-  perfil: { motor: 'codex', modelo: 'sonnet', esforco: 'low' },
-  vars: {},
+const ctx = (modelo: string, esforco: string) => ({
+  prompt: 'faça X', cwd: '/tmp',
+  perfil: { motor: 'codex', modelo, esforco }, vars: {},
 });
 
-const criados: string[] = [];
-afterEach(() => {
-  for (const f of criados.splice(0)) rmSync(f, { recursive: true, force: true });
+describe('mapaModelos', () => {
+  it('sem CODEX_MODELOS, não mapeia nada (vale o config.toml da máquina)', () => {
+    expect(mapaModelos({})).toEqual({});
+    expect(mapaModelos({ CODEX_MODELOS: '  ' })).toEqual({});
+  });
+
+  it('lê pares alias=id separados por vírgula', () => {
+    expect(mapaModelos({ CODEX_MODELOS: 'sonnet=gpt-5.1-codex, opus=gpt-5.6-sol' }))
+      .toEqual({ sonnet: 'gpt-5.1-codex', opus: 'gpt-5.6-sol' });
+  });
+
+  it('ignora pedaço malformado em vez de derrubar o boot', () => {
+    expect(mapaModelos({ CODEX_MODELOS: 'sonnet=gpt-5.1-codex,lixo,=x,y=' }))
+      .toEqual({ sonnet: 'gpt-5.1-codex' });
+  });
+});
+
+describe('esforcoCodex', () => {
+  it('passa direto os degraus que o codex conhece', () => {
+    for (const e of ['minimal', 'low', 'medium', 'high']) expect(esforcoCodex(e)).toBe(e);
+  });
+
+  // O bot tem cinco degraus e o codex quatro. Colapsar no teto é decisão
+  // consciente: recusar o job seria pior que entregá-lo no máximo do motor.
+  it('colapsa xhigh e max no teto do motor', () => {
+    expect(esforcoCodex('xhigh')).toBe('high');
+    expect(esforcoCodex('max')).toBe('high');
+  });
 });
 
 describe('argumentosCodex', () => {
-  it('usa output-last-message e nao traduz alias do Claude como modelo do Codex', () => {
-    const args = argumentosCodex(ctx(), '/tmp/out.txt');
-    expect(args).toContain('exec');
-    expect(args).toContain('--output-last-message');
-    expect(args).toContain('/tmp/out.txt');
-    expect(args).toContain('-C');
-    expect(args).toContain('/tmp');
-    expect(args).not.toContain('sonnet');
-    expect(args.at(-1)).toContain('faça X');
+  it('roda em modo não-interativo, fora de repo git e com sandbox de escrita', () => {
+    const args = argumentosCodex(ctx('sonnet', 'low'));
+    expect(args[0]).toBe('exec');
+    expect(args).toContain('--skip-git-repo-check');
+    expect(args.join(' ')).toContain('--sandbox workspace-write');
+    expect(args.join(' ')).not.toContain('danger-full-access');
   });
 
-  it('prepara o prompt para execucao autonoma e contrato final', () => {
-    const prompt = promptCodex(ctx());
-    expect(prompt).toContain('worker automatico');
-    expect(prompt).toContain('RENDER:, RESULT: ou ERRO:');
-    expect(prompt).toContain('faça X');
+  // O `-s` explícito é o ponto: sem ele, o comportamento do serviço passaria a
+  // depender do `~/.codex/config.toml` da máquina — a mesma armadilha do PATH
+  // que o CLAUDE_BIN já custou caro.
+  it('não passa --model quando não há mapa: vale o config da máquina', () => {
+    expect(argumentosCodex(ctx('opus', 'high'), {})).not.toContain('--model');
+  });
+
+  it('traduz o alias no id do motor quando o mapa diz', () => {
+    const args = argumentosCodex(ctx('opus', 'high'), { opus: 'gpt-5.6-sol' });
+    expect(args.join(' ')).toContain('--model gpt-5.6-sol');
+  });
+
+  it('leva o esforço como override de config', () => {
+    expect(argumentosCodex(ctx('sonnet', 'max'))).toContain('model_reasoning_effort="high"');
+  });
+
+  it('nunca usa shell: o prompt é o ÚLTIMO argumento, sem interpolação', () => {
+    const args = argumentosCodex({ ...ctx('sonnet', 'low'), prompt: 'rm -rf / ; echo oi' });
+    expect(args[args.length - 1]).toBe('rm -rf / ; echo oi');
   });
 });
 
 describe('registro de motores', () => {
-  it('registra "codex" em RUNNERS', () => {
+  it('registra "codex" em RUNNERS sem tocar em "claude"', () => {
     expect(RUNNERS.codex).toBeInstanceOf(CodexRunner);
     expect(RUNNERS.codex.nome).toBe('codex');
+    expect(RUNNERS.claude?.nome).toBe('claude');
   });
 });
 
-describe('execucao real de subprocesso', () => {
-  it('devolve somente o arquivo de mensagem final, nao stdout', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'inemaccbot-codex-test-'));
-    criados.push(tmp);
-    const r = new CodexRunner({
-      binario: process.execPath,
-      montarArgs: (_ctx, outputFile) => [
-        '-e',
-        [
-          'const fs = require("node:fs");',
-          'console.log("RESULT: /tmp/eco-do-prompt.txt");',
-          `fs.writeFileSync(${JSON.stringify(outputFile)}, "RESULT: /tmp/final.txt");`,
-        ].join(''),
-      ],
-    });
-    const saida = await r.iniciar({ ...ctx(), cwd: tmp }).aguardar();
-    expect(saida).toBe('RESULT: /tmp/final.txt');
+describe('execução real de subprocesso', () => {
+  it('devolve somente a mensagem final gravada pelo Codex', async () => {
+    const r = new CodexRunner({binario:process.execPath,montarArgs:(_ctx,out)=>['-e',`require('node:fs').writeFileSync(${JSON.stringify(out)},'RESULT: teste'); console.log('metadados');`]});
+    const exec=r.iniciar({...ctx('sonnet','low'),cwd:process.cwd()});
+    try {expect(await exec.aguardar()).toBe('RESULT: teste');}finally{await exec.limpar();}
   });
 });

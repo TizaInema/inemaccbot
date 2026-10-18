@@ -14,10 +14,9 @@
 //
 // Portado do `deliver.ts`/`media.ts` do v1 no que importa: sanitização de nome e
 // garantia de que a cópia NUNCA escreve fora do diretório de destino.
-import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
-import { basename, dirname, extname, resolve, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+import { basename, extname, resolve, sep } from 'node:path';
 
 import { LIMITE_MENSAGEM } from './telegram.js';
 
@@ -39,7 +38,6 @@ export const LIMITE_TEXTO_BYTES = LIMITE_MENSAGEM;
 export const LIMITE_DOCUMENTO_BYTES = 45 * 1024 * 1024;
 
 const EXTS_TEXTO = new Set(['.txt', '.srt', '.md', '.vtt']);
-const EXTS_VIDEO = new Set(['.mp4', '.mov', '.webm']);
 
 /** Nome público seguro: sem diretório embutido, sem espaço, sem unicode
  * problemático. `basename` primeiro mata qualquer `../../etc/passwd`. */
@@ -88,8 +86,7 @@ export function copiarParaDestino(origem: string, destinoDir: string, nomePedido
     // job). Adota em vez de multiplicar cópias — a mesma regra de "procure
     // antes de criar" do §2.5, na escala desta operação.
     if (statSync(alvo).size === statSync(origem).size &&
-        createHash('sha256').update(readFileSync(alvo)).digest('hex') ===
-        createHash('sha256').update(readFileSync(origem)).digest('hex')) return alvo;
+      createHash('sha256').update(readFileSync(alvo)).digest('hex')===createHash('sha256').update(readFileSync(origem)).digest('hex')) return alvo;
   }
 }
 
@@ -134,44 +131,6 @@ export interface OpcoesEntrega {
    * ficar lá — o v1 nunca passava `--pasta` nessas skills por isso mesmo.
    */
   mover?: boolean;
-  /** Compactador injetavel para testes; producao usa ffmpeg local. */
-  compactarVideo?: (caminho: string) => string | undefined;
-}
-
-export function caminhoVideo720p(caminho: string): string {
-  const ext = extname(caminho) || '.mp4';
-  return resolve(dirname(caminho), `${basename(caminho, ext)}-720p.mp4`);
-}
-
-export function compactarVideoParaTelegram(caminho: string): string | undefined {
-  const destino = caminhoVideo720p(caminho);
-  try {
-    if (existsSync(destino) && statSync(destino).size > 0 && statSync(destino).size <= LIMITE_DOCUMENTO_BYTES) {
-      return destino;
-    }
-  } catch { /* recomprime abaixo */ }
-
-  const r = spawnSync('ffmpeg', [
-    '-y',
-    '-hide_banner',
-    '-loglevel', 'error',
-    '-i', caminho,
-    '-vf', "scale='if(gte(iw,ih),1280,720)':'if(gte(iw,ih),720,1280)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '28',
-    '-c:a', 'aac',
-    '-b:a', '96k',
-    '-movflags', '+faststart',
-    destino,
-  ], { encoding: 'utf8', timeout: 20 * 60 * 1_000 });
-
-  if (r.status !== 0) return undefined;
-  try {
-    return statSync(destino).size <= LIMITE_DOCUMENTO_BYTES ? destino : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function planejarEntrega(caminho: string, opts: OpcoesEntrega = {}): Entrega {
@@ -206,14 +165,6 @@ export function planejarEntrega(caminho: string, opts: OpcoesEntrega = {}): Entr
 
   if (tamanho <= LIMITE_DOCUMENTO_BYTES) {
     return { mensagem: `pronto: ${basename(caminho)}`, anexo: caminho };
-  }
-
-  if (EXTS_VIDEO.has(ext)) {
-    const compactar = opts.compactarVideo ?? compactarVideoParaTelegram;
-    const menor = compactar(caminho);
-    if (menor && existsSync(menor) && statSync(menor).size <= LIMITE_DOCUMENTO_BYTES) {
-      return { mensagem: `pronto: ${basename(menor)} (720p)`, anexo: menor };
-    }
   }
 
   const mb = Math.round(tamanho / (1024 * 1024));

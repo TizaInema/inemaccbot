@@ -1,20 +1,25 @@
-{
-  "name": "inemaccbot",
-  "version": "0.2.0",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=22.18.0"
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
-    "start": "node dist/index.js",
-    "doctor": "node dist/doctor.js"
-  },
-  "devDependencies": {
-    "@types/node": "^22.18.0",
-    "typescript": "^5.9.3",
-    "vitest": "^5.0.5"
-  }
+﻿{
+    "name":  "inemaccbot",
+    "version":  "0.20.11",
+    "private":  true,
+    "type":  "module",
+    "scripts":  {
+                    "build":  "tsc",
+                    "typecheck":  "tsc --noEmit",
+                    "test":  "vitest run",
+                    "test:watch":  "vitest",
+                    "start":  "node dist/index.js",
+                    "doctor":  "node dist/doctor.js"
+                },
+    "dependencies":  {
+                         "better-sqlite3":  "^12.11.1",
+                         "grammy":  "^1.45.1",
+                         "playwright":  "1.57.0"
+                     },
+    "devDependencies":  {
+                            "@types/better-sqlite3":  "^7.6.13",
+                            "@types/node":  "^22.0.0",
+                            "typescript":  "^5.7.0",
+                            "vitest":  "^5.0.5"
+                        }
 }

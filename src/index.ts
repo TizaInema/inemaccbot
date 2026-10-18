@@ -8,12 +8,13 @@
 //   `main`         — lê o .env do disco, monta as deps reais, liga os sinais.
 // `main` só roda quando o módulo é EXECUTADO; nunca no import (os testes
 // importam este arquivo).
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { type Config, carregarConfig } from './config.js';
+import { type EscritaEnv, gravarEnv, trocarValorEnv } from './env-arquivo.js';
 import { abrirDb } from './db/abrir.js';
 import { redatorPadrao } from './dominio/redacao.js';
 import { carregarSkills as carregarSkillsPadrao, type SkillDef } from './dominio/registry.js';
@@ -26,9 +27,10 @@ import { aplicarMigrations } from './db/migrations.js';
 import { CONCORRENCIAS, FILAS } from './fila/filas.js';
 import { FilaSqlite } from './fila/store.js';
 import { RUNNERS } from './fila/runner.js';
-import './fila/runner-claude.js'; // efeito colateral: registra RUNNERS.claude
-import './fila/runner-codex.js'; // idem: RUNNERS.codex
+import { ClaudeRunner } from './fila/runner-claude.js'; // o import também registra RUNNERS.claude (sobrescrito no boot com CLAUDE_BIN)
 import './fila/runner-chrome.js'; // idem: RUNNERS.chrome (fase de navegador)
+import { CodexRunner } from './fila/runner-codex.js'; // motor alternativo — docs/motor-codex.md
+import { OpencodeRunner } from './fila/runner-opencode.js'; // motor alternativo — docs/motor-opencode.md
 import { criarTarefas as criarTarefasPadrao } from './fila/tarefas/index.js';
 import type { Agora, Job } from './fila/types.js';
 import { Worker, type Tarefa } from './fila/worker.js';
@@ -37,6 +39,16 @@ import { criarBaixadorTelegram } from './gateway/midia.js';
 import { nomeDeEntrega } from './gateway/entrega.js';
 import { criarNotificador } from './gateway/notificar.js';
 import { type Transporte, criarBot } from './gateway/telegram.js';
+
+/**
+ * A versão sai do `package.json`, não de uma constante ao lado: duas cópias do
+ * número divergem no primeiro bump com pressa, e a que aparece no log de boot
+ * seria a mentira mais barata de produzir. Resolve tanto de `dist/` quanto de
+ * `src/` — os dois estão um nível abaixo da raiz do repo.
+ */
+const VERSAO = (JSON.parse(
+  readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+) as { version: string }).version;
 
 // A lista de filas e suas concorrências vivem em `fila/filas.ts` — o gateway
 // precisa da MESMA lista para o `/fila`, e ele não pode importar daqui.
@@ -70,6 +82,17 @@ export interface DepsServico {
        * fica surdo: jobs rodam, nenhum comando entra, nenhuma notificação sai.
        * Chamar isto derruba o serviço para o systemd reiniciar. */
       aoFalhaFatal: (e: Error) => void;
+      /**
+       * Chamado DEPOIS de responder a um comando, para soltar o que o comando
+       * empilhou (o material do `/dados`).
+       *
+       * Existe porque o dreno dos avisos de fluxo estava pendurado só na
+       * notificação de JOB: `/dados` com a fila vazia dizia "reentregando 2
+       * fase(s)" e nada chegava — as mensagens ficavam no buffer até o próximo
+       * job terminar, que podia ser nunca. Depois de responder, e não antes,
+       * para o resumo chegar na frente do material.
+       */
+      aposResponder?: () => Promise<void>;
     },
   ) => TransporteServico;
   /** Como o PROCESSO morre depois de `parar()` numa falha fatal. Só `main`
@@ -125,6 +148,41 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
   const fila = new FilaSqlite(db, deps.agora);
   const leaseSegundos = deps.leaseSegundos ?? LEASE_PADRAO_SEGUNDOS;
 
+  // O runner do Claude passa a usar o binário da CONFIG, não o que o PATH do
+  // processo achar. Ver `claudeBin` em `config.ts`: com o PATH do systemd o
+  // `claude` caía numa instalação de março que pede permissão a cada `Write`,
+  // e as fases de texto terminavam sem escrever nada (C#77, C#78).
+  //
+  // Se o binário declarado não existe, o boot cai AQUI, com o caminho na
+  // mensagem — e não mais fase por fase, com um erro que não fala do assunto.
+  if (!existsSync(cfg.claudeBin)) {
+    throw new Error(`CLAUDE_BIN não existe: ${cfg.claudeBin}`);
+  }
+  RUNNERS.claude = new ClaudeRunner(cfg.claudeBin);
+
+  // Motores ALTERNATIVOS (`| motor=codex`, `| motor=opencode`).
+  //
+  // Registrados sempre, mas a ausência do binário NÃO derruba o boot como a do
+  // `claude`: eles são opcionais por desenho, e uma máquina que só usa o motor
+  // padrão não pode parar de subir porque não instalou um agente que ninguém
+  // pediu. Quem pedir por um motor sem binário recebe o erro do `spawn` no job,
+  // com o caminho na mensagem.
+  //
+  // A exceção é o motor PADRÃO: se `MOTOR_PADRAO` aponta para um binário que não
+  // existe, TODO job de agente falharia — isso é erro de boot, igual ao do
+  // `CLAUDE_BIN`, e cai aqui com o caminho na mensagem.
+  RUNNERS.codex = new CodexRunner(cfg.codexBin);
+  RUNNERS.opencode = new OpencodeRunner(cfg.opencodeBin);
+  for (const [motor, bin] of [['codex', cfg.codexBin], ['opencode', cfg.opencodeBin]] as const) {
+    if (existsSync(bin)) continue;
+    if (cfg.motorPadrao === motor) {
+      throw new Error(`MOTOR_PADRAO=${motor}, mas o binário não existe: ${bin}`);
+    }
+    process.stderr.write(
+      `motor ${motor}: binário ausente (${bin}) — só falha se alguém pedir | motor=${motor}\n`,
+    );
+  }
+
   /** Identidade DESTA instância — é contra isto que as guardas de posse
    * (`concluir`/`falhar`/`renovar`) comparam. Calculado uma vez. */
   const dono = `${hostname()}:${process.pid}`;
@@ -147,8 +205,10 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
   let fluxosRegistrados: FluxoRegistrado[] = [];
   /** Avisos de fluxo produzidos DENTRO da transação do ack, drenados logo
    * depois dela — ver `aoEvento` abaixo. */
-  const eventosDeFluxo: { chatId: number; texto: string }[] = [];
+  const eventosDeFluxo: { chatId: number; texto: string; anexo?: string }[] = [];
   let lacos: Promise<void>[] = [];
+  /** Dreno dos avisos de fluxo, apontado assim que ele existe (ver `aposResponder`). */
+  let soltarFluxo: () => Promise<void> = async (): Promise<void> => {};
 
   const timeouts = new Set<NodeJS.Timeout>();
   /** Resolvedores das esperas ociosas, para acordá-las no desligamento em vez
@@ -182,6 +242,7 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
 
   const aoComando = async (chatId: number, texto: string): Promise<string> =>
     tratarMensagem(chatId, texto, {
+      raizRuntime: RAIZ_REPO,
       fila,
       agora: deps.agora,
       defs,
@@ -315,7 +376,7 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
     mkdirSync(raizMidia, { recursive: true });
     const raizArtefatos = join(cfg.stateDir, 'artefatos');
     mkdirSync(raizArtefatos, { recursive: true });
-    mkdirSync(join(cfg.stateDir, 'interacao'), { recursive: true });
+    mkdirSync(join(cfg.stateDir,'interacao'),{recursive:true});
 
     // 2.1 registry de skills. ANTES dos workers, e sem try/catch de propósito:
     //     registry inválido derruba o boot, igual a checksum de migration
@@ -363,8 +424,9 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
     const promptDe = criarPromptDe({
       defs,
       raizRepo: RAIZ_REPO,
+      projetosDir: cfg.projetosDir,
       raizArtefatos,
-      cwd: homedir(),
+      cwd: raizArtefatos,
       log: deps.log,
       perfilPadrao: {
         motor: cfg.motorPadrao,
@@ -391,8 +453,21 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
       // domínio): resolvido a partir do `dist/`, funciona rodando de qualquer
       // diretório.
       heygenEstudioScript: join(RAIZ_REPO, 'scripts', 'heygen-estudio.mjs'),
+      ...(cfg.cpuMedia?{cpuReelScript:join(RAIZ_REPO,'scripts','reel-flow-cpu.py')} : {}),
+      // As skills que declaram `comando` viram tarefa `function` aqui. `defs`
+      // já foi carregado e validado no passo anterior — registrar depois é o
+      // que garante que um catálogo inválido derrube o boot antes de existir
+      // worker para executá-lo.
+      skills: defs,
+      raizArtefatos,
+      projetosDir: cfg.projetosDir,
     });
-    transp = deps.criarTransporte(cfg, { aoComando, log: deps.log, aoFalhaFatal: falhaFatal });
+    // Fechamento sobre a variável: `soltarEventosDeFluxo` só existe abaixo, e
+    // ler o valor aqui congelaria o no-op para sempre.
+    transp = deps.criarTransporte(cfg, {
+      aoComando, log: deps.log, aoFalhaFatal: falhaFatal,
+      aposResponder: () => soltarFluxo(),
+    });
     const transporte = transp.transporte;
     /** Drena os avisos de fluxo. Chamado depois do ack, nunca dentro dele. */
     const soltarEventosDeFluxo = async (): Promise<void> => {
@@ -400,6 +475,18 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
         const e = eventosDeFluxo.shift()!;
         try {
           await transporte.responder(e.chatId, e.texto);
+          // O ANEXO é tentado DEPOIS do texto e num try próprio: arquivo grande
+          // demais para o Telegram (50 MB) não pode fazer sumir a mensagem que
+          // diz o que aconteceu. O caminho já foi no texto do portão, então
+          // falhar aqui degrada para "está no disco", não para silêncio.
+          if (e.anexo && transporte.enviarDocumento) {
+            try {
+              await transporte.enviarDocumento(e.chatId, e.anexo);
+            } catch (erroAnexo) {
+              deps.log(`fluxo: anexo não entregue (${e.anexo}): ${(erroAnexo as Error).message}`);
+              await transporte.responder(e.chatId, `⚠️ não consegui enviar o arquivo — ele está em ${e.anexo}`);
+            }
+          }
         } catch (erro) {
           // §8: perder o aviso é ruim, derrubar o worker é pior. O log fica.
           deps.log(`fluxo: aviso não entregue: ${(erro as Error).message}`);
@@ -435,16 +522,10 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
 
     // O notificador do worker faz as duas coisas: avisa sobre o JOB (quando ele
     // tem dono no chat) e solta os avisos de FLUXO que o avanço empilhou.
-    const notificacoesEmAndamento = new Map<number, Promise<void>>();
-    notificar = (job: Job): Promise<void> => {
-      const emAndamento = notificacoesEmAndamento.get(job.id);
-      if (emAndamento) return emAndamento;
-      const envio = (async () => {
-        await notificarJob(job);
-        await soltarEventosDeFluxo();
-      })().finally(() => notificacoesEmAndamento.delete(job.id));
-      notificacoesEmAndamento.set(job.id, envio);
-      return envio;
+    soltarFluxo = soltarEventosDeFluxo;
+    notificar = async (job: Job): Promise<void> => {
+      await notificarJob(job);
+      await soltarEventosDeFluxo();
     };
 
     // 6. §8: a recuperação acabou de marcar jobs como `failed` — uma transição
@@ -481,6 +562,18 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
           log: deps.log,
           aoTerminar: notificar ?? undefined,
           redigir,
+          // Evidência de falha de contrato: `state/saidas/<job>-t<n>.log`.
+          // Um arquivo por TENTATIVA — o C#77 falhou duas vezes e as duas
+          // saídas importam (a segunda pode ter quebrado por outro motivo).
+          // Redigido, porque este arquivo tem o mesmo destino que o erro: olho
+          // humano, com prompt e caminhos dentro.
+          guardarSaidaBruta: (job, bruto) => {
+            const dir = join(cfg.stateDir, 'saidas');
+            mkdirSync(dir, { recursive: true });
+            const caminho = join(dir, `${job.id}-t${job.tentativas}.log`);
+            writeFileSync(caminho, redigir(bruto), 'utf8');
+            return caminho;
+          },
           // O avanço do fluxo acontece DENTRO da transação do ack.
           aoAckar: (job) => fluxos?.avancar(job),
         },
@@ -602,8 +695,15 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
   };
 }
 
-/** Parser mínimo de .env: `CHAVE=valor`, `#` comenta a linha, aspas opcionais.
- * Não é dotenv — é o suficiente para o boot e não acrescenta dependência. */
+/** Parser mínimo de .env: `CHAVE=valor`, `#` comenta, aspas opcionais.
+ * Não é dotenv — é o suficiente para o boot e não acrescenta dependência.
+ *
+ * O `#` também comenta no FIM da linha, mas só quando vem depois de espaço e
+ * fora de aspas: `PROJETOS_DIR=/root/projetos   # default: ...` dava um caminho
+ * com o comentário dentro, e o boot morria dizendo que o diretório não existe.
+ * A exigência do espaço preserva o `#` que é DADO — uma senha `s3nh#a` ou um
+ * fragmento de URL colado no valor continuam inteiros; se o valor legítimo tem
+ * espaço antes do `#`, aspas resolvem. */
 export function lerEnv(texto: string): Record<string, string> {
   const saida: Record<string, string> = {};
   for (const linha of texto.split('\n')) {
@@ -613,13 +713,63 @@ export function lerEnv(texto: string): Record<string, string> {
     if (i <= 0) continue;
     const chave = limpa.slice(0, i).trim();
     let valor = limpa.slice(i + 1).trim();
-    if (valor.length >= 2 && (valor.startsWith('"') || valor.startsWith("'")) && valor.at(-1) === valor[0]) {
-      valor = valor.slice(1, -1);
+    const aspa = valor[0] === '"' || valor[0] === "'" ? valor[0] : '';
+    const fecha = aspa ? valor.indexOf(aspa, 1) : -1;
+    if (fecha > 0) {
+      valor = valor.slice(1, fecha);
+    } else if (!aspa) {
+      valor = valor.replace(/\s+#.*$/, '').trim();
     }
     saida[chave] = valor;
   }
   return saida;
 }
+
+/**
+ * Publica as chaves do `.env` no ambiente do PROCESSO — não só no `Config`.
+ *
+ * Sem isto o bot fica assimétrico e o sintoma é difícil de ler: sob systemd o
+ * `EnvironmentFile=` já põe tudo em `process.env`, e os scripts filhos
+ * (`montar-reel.py`, `gen-imagem.py`, `transcribe-groq.sh` — que herdam o
+ * ambiente porque o `spawn` não passa `env:`) enxergam `INEMAIMG_HOST`,
+ * `GROQ_ENV_PATH` e afins. Rodando pelo `./start.sh`, o `main()` lia o arquivo
+ * para um objeto e os filhos NÃO viam nada — a mesma máquina, a mesma config,
+ * comportamento diferente conforme quem subiu o processo.
+ *
+ * O que já está no ambiente VENCE o arquivo, igual a `carregarConfig`.
+ */
+export function exportarParaAmbiente(
+  doArquivo: Record<string, string>,
+  env: NodeJS.ProcessEnv,
+): void {
+  for (const [chave, valor] of Object.entries(doArquivo)) {
+    if (env[chave] === undefined) env[chave] = valor;
+  }
+}
+
+/**
+ * Persistência do pareamento: grava a allowlist nova no `.env`, que é de onde
+ * ela vai ser lida no próximo boot (o systemd relê o `EnvironmentFile` no
+ * start). I/O injetado pelo mesmo motivo do resto do arquivo — teste não
+ * escreve no `.env` de ninguém.
+ */
+export function persistirAllowlistNoEnv(
+  caminho: string,
+  ids: number[],
+  io: EscritaEnv & { ler(caminho: string): string },
+): void {
+  // Vírgula sem espaço: é exatamente o formato que `carregarConfig` parseia.
+  const texto = trocarValorEnv(io.ler(caminho), 'ALLOWED_CHAT_IDS', ids.join(','));
+  gravarEnv(caminho, texto, io);
+}
+
+/** As operações de disco reais por trás de `persistirAllowlistNoEnv`. */
+const ESCRITA_ENV_REAL = {
+  ler: (c: string): string => readFileSync(c, 'utf8'),
+  escrever: (c: string, t: string): void => { writeFileSync(c, t, { mode: 0o600 }); },
+  renomear: (de: string, para: string): void => { renameSync(de, para); },
+  permissao: (c: string, m: number): void => { chmodSync(c, m); },
+};
 
 /** Transporte real. `bot.start()` NÃO é aguardado: no grammy ele só assenta
  * quando o bot PARA — esperar por ele travaria o boot antes do primeiro
@@ -666,11 +816,21 @@ function criarTransporteReal(
     aoComando: (chatId: number, texto: string) => Promise<string>;
     log: (m: string) => void;
     aoFalhaFatal: (e: Error) => void;
+    aposResponder?: () => Promise<void>;
+    /** O `.env` que `main` leu — destino do id quando o bot é pareado. */
+    caminhoEnv: string;
   },
 ): TransporteServico {
   const { bot, transporte } = criarBot(cfg, {
     aoComando: deps.aoComando,
     log: deps.log,
+    // REPASSAR não é detalhe: o serviço passa o dreno aqui, e foi esquecê-lo
+    // neste ponto que manteve `/dados` mudo mesmo depois de o dreno existir.
+    // `criarBot` EXIGE o campo justamente para o compilador cobrar isto.
+    aposResponder: deps.aposResponder ?? (async (): Promise<void> => {}),
+    persistirAllowlist: (ids: number[]): void => {
+      persistirAllowlistNoEnv(deps.caminhoEnv, ids, ESCRITA_ENV_REAL);
+    },
     // Anexo cai em `state/midia`, que é a raiz que o `ffmpeg.thumb` já exige —
     // é o que torna aquele comando alcançável na prática.
     baixarAnexo: criarBaixadorTelegram(
@@ -688,6 +848,8 @@ export async function main(): Promise<void> {
   const doArquivo = existsSync(arquivo) ? lerEnv(readFileSync(arquivo, 'utf8')) : {};
   // O ambiente do processo vence o arquivo (systemd/override manual).
   const cfg = carregarConfig({ ...doArquivo, ...process.env });
+  // E o arquivo tem que chegar aos scripts filhos, não só ao Config.
+  exportarParaAmbiente(doArquivo, process.env);
 
   mkdirSync(dirname(cfg.logFile), { recursive: true });
   const log = (m: string): void => {
@@ -702,7 +864,9 @@ export async function main(): Promise<void> {
 
   const svc = criarServico(cfg, {
     agora: () => Math.floor(Date.now() / 1000),
-    criarTransporte: criarTransporteReal,
+    // O caminho do `.env` entra por aqui: `criarServico` não precisa conhecê-lo,
+    // e o pareamento precisa saber onde gravar o id do dono.
+    criarTransporte: (c, d) => criarTransporteReal(c, { ...d, caminhoEnv: arquivo }),
     log,
     intervaloOciosoMs: 1_000,
     heartbeatMs: 20_000,
@@ -733,7 +897,7 @@ export async function main(): Promise<void> {
   }
 
   await svc.iniciar();
-  log(`serviço no ar (filas: ${FILAS.join(', ')})`);
+  log(`serviço no ar v${VERSAO} (filas: ${FILAS.join(', ')})`);
 }
 
 // Só quando EXECUTADO — nunca no import (os testes importam este módulo).

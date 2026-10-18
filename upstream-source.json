@@ -1,0 +1,6 @@
+﻿{
+    "version":  "0.20.11",
+    "integration":  "Recovered original runtime while retaining VPS setup and downstream diagnostics",
+    "commit":  "1399217edda7337d68717cae03cd1ca2a8886062",
+    "repository":  "https://github.com/inematds/inemaccbot"
+}

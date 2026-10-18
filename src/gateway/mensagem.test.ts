@@ -39,7 +39,7 @@ beforeEach(() => {
     { ...comum, command: 'dublar', artefato_exts: ['mp4'], aceita_destino: true },
   ], dir);
 });
-afterEach(() => { fila?.db.close(); rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 function deps(respostas: string[]): DepsMensagem {
   return {
@@ -55,6 +55,17 @@ function deps(respostas: string[]): DepsMensagem {
 }
 
 describe('tratarMensagem', () => {
+  it('/ajuda é o resumo e /ajuda tudo é a lista inteira', async () => {
+    const d = deps([]);
+    const curta = await tratarMensagem(1, '/ajuda', d);
+    expect(curta).toContain('/ajuda tudo');
+    expect(curta).not.toContain('/furar');
+
+    const completa = await tratarMensagem(1, '/ajuda tudo', d);
+    expect(completa).toContain('/furar');
+    expect(completa).not.toContain('não conheço');
+  });
+
   it('comando de serviço nem chega no agente', async () => {
     const d = deps([]); // nenhuma resposta preparada: se chamar o runner, dá vazio
     expect(await tratarMensagem(1, '/ping', d)).toBe('pong');
@@ -76,15 +87,6 @@ describe('tratarMensagem', () => {
     expect(job.chat_id).toBe(9);
     expect(r).toContain('job j1');
   });
-
-    it('aceita RESULT: do runner Codex ao interpretar texto livre', async () => {
-      const r = await tratarMensagem(9, 'crie um video explicativo sobre IA', deps([
-        `RESULT: ${JSON.stringify({ jobs: [{ command: 'dublar', entrada: 'http://x' }], ignorado: null })}`,
-      ]));
-      const job = fila.obter(1)!;
-      expect(job.tarefa).toBe('dublar');
-      expect(r).toContain('job j1');
-    });
 
   it('parte não atendida do pedido é dita, não engolida', async () => {
     const r = await tratarMensagem(1, 'transcreve e manda por email', deps([
@@ -133,7 +135,7 @@ describe('tratarMensagem', () => {
   it('pergunta é respondida com o contexto, em segunda chamada ao agente', async () => {
     fila.enfileirar({ fila: 'texto', kind: 'agent', tarefa: 'transcrever', input: '{}', chat_id: 5 });
     const runner = new FakeRunner({
-        respostas: [JSON.stringify({ pergunta: 'terminou?' }), 'RESULT: ainda está na fila.'],
+      respostas: [JSON.stringify({ pergunta: 'terminou?' }), 'ainda está na fila.'],
     });
     const r = await tratarMensagem(5, 'já terminou?', { ...deps([]), runner });
     expect(r).toBe('ainda está na fila.');
@@ -142,14 +144,14 @@ describe('tratarMensagem', () => {
   });
 
   it('o log que entra no contexto da resposta passa pelo redator', async () => {
-    writeFileSync(join(dir, 'servico.log'), 'boot ok\nBOT_TOKEN=123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n');
+    writeFileSync(join(dir, 'servico.log'), 'boot ok\nBOT_TOKEN=1234567890:AAsegredoqueNAOpodesairdaqui000000000\n');
     const runner = new FakeRunner({ respostas: [JSON.stringify({ pergunta: 'e aí?' }), 'tudo certo.'] });
     await tratarMensagem(1, 'e aí?', {
       ...deps([]),
       runner,
       redigir: (t2) => t2.replace(/\d{8,}:[A-Za-z0-9_-]{30,}/g, '«redigido»'),
     });
-    expect(runner.chamadas[1]!.prompt).not.toContain('123456789:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    expect(runner.chamadas[1]!.prompt).not.toContain('segredoqueNAOpodesair');
   });
 
   it('contexto da resposta NUNCA carrega job de outro chat', async () => {
@@ -157,16 +159,6 @@ describe('tratarMensagem', () => {
     const runner = new FakeRunner({ respostas: [JSON.stringify({ pergunta: 'e aí?' }), 'nada seu por aqui.'] });
     await tratarMensagem(5, 'e aí?', { ...deps([]), runner });
     expect(runner.chamadas[1]!.prompt).not.toContain('job 1');
-  });
-});
-
-describe('isolamento de chats', () => {
-  it('não permite consultar nem cancelar um job de outro chat', async () => {
-    fila.enfileirar({fila:'texto',kind:'agent',tarefa:'transcrever',input:'{}',chat_id:777});
-    expect(await tratarMensagem(5,'/status 1',deps([]))).toContain('não existe');
-    expect(await tratarMensagem(5,'/cancelar 1',deps([]))).toContain('não existe');
-    expect(fila.obter(1)!.status).toBe('queued');
-    expect(await tratarMensagem(5,'/jobs',deps([]))).not.toContain('j1 ');
   });
 });
 

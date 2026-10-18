@@ -13,10 +13,10 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 
 import type { Runner } from '../fila/runner.js';
+import { normalizarSaidaInteracao } from './interpret.js';
 import type { Job, Perfil } from '../fila/types.js';
 import type { SkillDef } from '../dominio/registry.js';
 import { textoSkills } from './gramatica.js';
-import { normalizarSaidaInteracao } from './interpret.js';
 
 /**
  * Lê só o FIM do arquivo, sem nunca carregar o log inteiro na memória (ele
@@ -108,7 +108,7 @@ export async function responderPergunta(
     timeoutMs: deps.timeoutMs ?? TIMEOUT_PADRAO_MS,
   });
   try {
-      const r = normalizarSaidaInteracao(await exec.aguardar());
+    const r = normalizarSaidaInteracao(await exec.aguardar());
     return r || 'não consegui responder isso agora.';
   } catch (e) {
     // §8: silêncio nunca é estado válido — inclusive aqui, onde a falha é de

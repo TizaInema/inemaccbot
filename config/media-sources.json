@@ -1,0 +1,39 @@
+﻿{
+    "sources":  [
+                    {
+                        "url":  "https://github.com/inematds/inemavox.git",
+                        "name":  "inemavox",
+                        "commit":  "19989b5561b6adf2b5681cd861ec0fac53ae1823"
+                    },
+                    {
+                        "url":  "https://github.com/inematds/videos-agnes.git",
+                        "name":  "videos-agnes",
+                        "commit":  "dca7c5d5b25f5ed21180e98057ebfca5224c466e"
+                    },
+                    {
+                        "url":  "https://github.com/inematds/agnesfree.git",
+                        "name":  "agnesfree",
+                        "commit":  "7a080adf0aa23519aa8a9db2012c690008252941"
+                    },
+                    {
+                        "url":  "https://github.com/inematds/videos-cursos-inema.git",
+                        "name":  "videos-cursos-inema",
+                        "commit":  "41bedfaf047e168fc006671948c5019e63d7351e"
+                    },
+                    {
+                        "url":  "https://github.com/inematds/promoavatar.git",
+                        "name":  "promoavatar",
+                        "commit":  "326dd66664e73e009e8eb26a3b4c822d9d074c09"
+                    },
+                    {
+                        "url":  "https://github.com/inematds/promoavatar3.git",
+                        "name":  "promoavatar3",
+                        "commit":  "48f52113cdd135a1912ee31f027e33d7e9118012"
+                    },
+                    {
+                        "url":  "https://github.com/inematds/inemapromover.git",
+                        "name":  "inemapromover",
+                        "commit":  "a7219a76348e29b1937dd0b782511c40faf65067"
+                    }
+                ]
+}
