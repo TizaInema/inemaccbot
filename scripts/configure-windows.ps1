@@ -144,7 +144,21 @@ $activate.Add_Click({
         } elseif (($output + $errorText).Contains('.env j')) {
             $status.Text = 'Ja existe uma configuracao na VPS. Avise para verificarmos o servico sem sobrescrever credenciais.'
         } else {
-            $status.Text = 'A configuracao nao foi concluida. Confira o token e o ID. Avise para verificarmos o estado da VPS.'
+            # Exibe apenas mensagens conhecidas do backend, nunca stderr bruto ou URLs.
+            $rawResult = $output + $errorText
+            if ($rawResult.Contains('Token recusado pelo Telegram')) {
+                $status.Text = 'O Telegram recusou o token. Copie o token NOVO e completo do BotFather e tente novamente.'
+            } elseif ($rawResult.Contains('Formato do token')) {
+                $status.Text = 'O token chegou incompleto. Copie somente o token do BotFather, sem textos antes ou depois.'
+            } elseif ($rawResult.Contains('conectar ao Telegram')) {
+                $status.Text = 'A VPS nao conseguiu conectar ao Telegram. Avise para verificarmos a rede.'
+            } elseif ($rawResult.Contains('Telegram respondeu HTTP')) {
+                $status.Text = 'O Telegram recusou temporariamente a consulta. Aguarde e tente novamente.'
+            } elseif ($rawResult.Contains('Permission denied')) {
+                $status.Text = 'A conexao SSH foi recusada. Avise para corrigirmos o acesso a VPS.'
+            } else {
+                $status.Text = 'Falha registrada na VPS. Avise para verificarmos a etapa exata, sem precisar enviar o token.'
+            }
         }
     } catch {
         $status.Text = 'Nao foi possivel concluir a conexao/configuracao. Avise para verificarmos o estado da VPS.'
