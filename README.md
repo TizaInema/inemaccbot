@@ -38,6 +38,8 @@ python3 scripts/configure-providers.py
 
 O arquivo `~/projetos/wifi/.env` fica com modo 600 e fora do Git. Agnes requer conta e disponibilidade do modelo. HeyGen requer chave, créditos e identificadores de avatar/voz da própria conta; os identificadores herdados dos projetos devem ser conferidos antes de gerar. A aprovação do roteiro permanece antes da geração. Não envie chaves pelo Telegram ou chat.
 
+Configure também `HEYGEN_AVATAR_ID` e `HEYGEN_VOICE_ID` no mesmo assistente: a adaptação usa esses valores da sua conta. No Windows, `scripts/configure-providers-windows.ps1` oferece campos privados com botão Colar e envia os valores à VPS somente por stdin do SSH.
+
 ## Verificação e atualização
 
 ```bash

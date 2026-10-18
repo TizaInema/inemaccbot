@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import time
 import urllib.request
@@ -75,6 +76,10 @@ if not ids or any(not re.fullmatch(r'-?\d+', part.strip()) for part in ids.split
 values = {
     'BOT_TOKEN': token, 'ALLOWED_CHAT_IDS': ids, 'MOTOR_PADRAO': 'codex',
     'MODELO_PADRAO': 'sonnet', 'ESFORCO_PADRAO': 'low',
+    'CODEX_BIN': shutil.which('codex') or '/usr/local/bin/codex',
+    'CLAUDE_BIN': shutil.which('claude') or '/usr/bin/claude',
+    'INEMACCBOT_CPU_MEDIA': '1',
+    'INEMACCBOT_WRITE_DIRS': str(root / 'state') + os.pathsep + str(root.parent / 'output'),
     'PROJETOS_DIR': str(root.parent), 'STATE_DIR': str(root / 'state'),
     'QUEUE_DB': str(root / 'inemaccbot.db'), 'LOG_FILE': str(root / 'state' / 'inemaccbot.log'),
     'PUBLICO_DIR': str(root.parent / 'output'),
