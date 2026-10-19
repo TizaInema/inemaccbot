@@ -121,7 +121,7 @@ describe('o registry REAL do repo', () => {
 
   it('é válido e tem as skills das etapas 2 e 3, mais as da Agnes', () => {
     expect(defs.map((d) => d.command).sort()).toEqual(
-      ['curso', 'demo', 'dublar', 'explicativo', 'historia',
+      ['animar', 'curso', 'demo', 'dublar', 'explicativo', 'historia',
         'imagem', 'reel', 'reelinematds', 'reelpromo', 'transcrever'],
     );
     // `otimizevideo` e `content2video` são 15 a 40 min de ffmpeg e Codex sem

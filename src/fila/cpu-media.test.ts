@@ -7,6 +7,16 @@ let dir:string;
 beforeEach(() => { dir=mkdtempSync(join(tmpdir(),'inemaccbot-cpu-')); });
 afterEach(() => rmSync(dir,{recursive:true,force:true}));
 describe('render controlado pelo bot', () => {
+  it('o roteiro de história inclui âncoras, dois keyframes e formato', () => {
+    const prompt=promptCpuMedia('historia','Uma história',{ratio:'9:16'},'/filme.mp4');
+    expect(prompt).toContain('anchors'); expect(prompt).toContain('end_prompt');
+    expect(prompt).toContain('"ratio":"9:16"');
+  });
+  it('animação de imagem preserva o anexo e os campos sem iniciar render no agente', () => {
+    const prompt=promptCpuMedia('animar','/foto.png',{segundos:'15',ratio:'1:1'},'/out.mp4');
+    expect(prompt).toContain('/foto.png'); expect(prompt).toContain('"seconds":15');
+    expect(prompt).toContain('NÃO execute render');
+  });
   it('recusa um RENDER anunciado sem roteiro e não dispara processo', () => {
     const disparar=vi.fn();
     expect(() => iniciarCpuMedia(dir,'explicativo',join(dir,'out.mp4'),false,disparar)).toThrow(/não gravou/);

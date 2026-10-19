@@ -22,6 +22,10 @@ describe('nomeAnexo', () => {
 });
 
 describe('comandoDeAnexo', () => {
+  it('anima uma foto anexada preservando duração e proporção', () => {
+    expect(comandoDeAnexo('animar: | segundos=15 | ratio=9:16', '/midia/foto.png'))
+      .toBe('animar: /midia/foto.png | segundos=15 | ratio=9:16');
+  });
   it('usa o caminho como entrada da skill', () => {
     expect(comandoDeAnexo('transcrever:', '/a/b.mp4')).toBe('transcrever: /a/b.mp4');
     expect(comandoDeAnexo('transcrever', '/a/b.mp4')).toBe('transcrever: /a/b.mp4');

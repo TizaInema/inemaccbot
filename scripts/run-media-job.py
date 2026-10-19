@@ -9,7 +9,7 @@ import media_cpu as media
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--command', required=True, choices=['explicativo','curso','demo','reel','reelpromo','reelinematds','historia'])
+    parser.add_argument('--command', required=True, choices=['explicativo','curso','demo','reel','reelpromo','reelinematds','historia','animar'])
     parser.add_argument('--spec', required=True); parser.add_argument('--output', required=True)
     parser.add_argument('--vertical', action='store_true')
     args = parser.parse_args()
@@ -20,6 +20,9 @@ def main():
         with tempfile.TemporaryDirectory(dir=output.parent) as folder:
             source = media.source_media(data['source'], folder)
             media.reel(source, output, data['title'][:95], str(data.get('caption', ''))[:300])
+    elif args.command == 'animar':
+        from agnes_video import animate
+        animate(args.spec,output)
     elif args.command == 'historia':
         from agnes_story import build
         build(args.spec, output)

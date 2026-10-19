@@ -13,9 +13,14 @@ O motor original foi recuperado de `inematds/inemaccbot` (versão e commit em `u
 - `explicativo: <assunto> | vertical`, `curso: <assunto>`, `demo: <URL e objetivo>`: roteiro, narração e montagem CPU. Demo usa capturas reais do site público.
 - `reel: <arquivo>`, `reelpromo: <arquivo>`, `reelinematds: <arquivo>`: vídeo vertical com headline, resumo e CTA.
 - `imagem: <descrição>`, `historia: <roteiro>`: geração pela conta Agnes configurada pelo proprietário.
+- Envie uma foto com legenda `animar: | segundos=15 | ratio=9:16` para transformar a arte em vídeo Agnes, inclusive acima dos 12 segundos de um clipe.
 - `/promoclub <assunto>`, `/promoavatar <assunto>`, `/promoavatar3 <assunto>`: textos por público, aprovação e integração de avatares. `/aprovar A#1`, `/pausar A#1`, `/retomar A#1`, `/dados A#1` controlam o fluxo.
 
 A voz CPU é Kokoro `pf_dora`, sem clonagem Bella/Rachel. A montagem CPU usa cartões e enquadramento vertical; os projetos originais ficam disponíveis para consulta. A publicação automática no YouTube exige um publicador separado: `livesN` é a pasta local de entrega.
+
+A integração Agnes adapta o motor real de [inematds/videos-agnes](https://github.com/inematds/videos-agnes), fixado em `config/agnes-source.json`: âncoras e vistas derivadas de personagens, duas imagens por cena, revisão de dicção antes da voz, keyframes Agnes 2.5 Flash, narração e montagem. `historia: <conto> | ratio=9:16` seleciona o formato. A voz continua local por CPU; as imagens e os movimentos vêm da Agnes.
+
+As tarefas guardam os identificadores antes de consultar a fila. Falhas transitórias de fila têm retry; tarefas aceitas retomam pelo ID, sem criar outro clipe. Roteiros alterados exigem nova saída para preservar resultados anteriores. A montagem só acontece com todas as cenas completas. Há uma folha de contato em `<saida>.work/contato.jpg`. A versão Flash é usada explicitamente, sem troca automática para modelos pagos; preços e disponibilidade dependem da conta Agnes.
 
 ## Instalação Linux
 

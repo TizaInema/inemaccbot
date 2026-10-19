@@ -16,7 +16,7 @@ export function valorProvider(nome: string): string | undefined {
 export const temChave = (nome: string): boolean => !!valorProvider(nome);
 
 export function pendenciaSkill(comando: string, raiz: string): string | undefined {
-  if (['imagem', 'historia'].includes(comando) && !temChave('AGNES_API_KEY'))
+  if (['imagem', 'historia', 'animar'].includes(comando) && !temChave('AGNES_API_KEY'))
     return 'Falta configurar AGNES_API_KEY no cofre da VPS. Use scripts/configure-providers.py no servidor.';
   if (comando !== 'imagem' && !existsSync(join(raiz, '.venv-media/bin/python')))
     return 'O runtime de mídia ainda precisa ser instalado: python3 scripts/install-media.py.';
@@ -24,7 +24,7 @@ export function pendenciaSkill(comando: string, raiz: string): string | undefine
 }
 
 export function textoDiagnostico(raiz: string): string {
-  const comandos = ['transcrever', 'dublar', 'explicativo', 'curso', 'demo', 'reel', 'reelpromo', 'reelinematds', 'imagem', 'historia'];
+  const comandos = ['transcrever', 'dublar', 'explicativo', 'curso', 'demo', 'reel', 'reelpromo', 'reelinematds', 'imagem', 'historia', 'animar'];
   return ['Mídia na VPS: CPU, voz sintética Kokoro em português.',
     ...comandos.map(c => `${c}: ${pendenciaSkill(c, raiz) ?? 'disponível'}`),
     `Avatar HeyGen: ${temChave('HEYGEN_API_KEY') ? 'chave configurada; requer créditos e avatar na conta' : 'falta HEYGEN_API_KEY'}`,

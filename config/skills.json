@@ -228,7 +228,7 @@
       "mp4"
     ],
     "max_tentativas": 3,
-    "timeout_segundos": 10800,
+    "timeout_segundos": 28800,
     "perfil": {
       "modelo": "sonnet",
       "esforco": "low"
@@ -239,9 +239,14 @@
         "tipo": "texto",
         "padrao": "",
         "descricao": "nome curto da história (sem espaço); vazio = derivado do título"
+      },
+      "ratio": {
+        "tipo": "texto",
+        "padrao": "16:9",
+        "descricao": "proporção do filme: 16:9, 9:16 ou 1:1"
       }
     },
-    "descricao": "história/conto → filme animado narrado (requer chave Agnes · skill videos-agnes)",
+    "descricao": "história → filme Agnes com personagens consistentes, dois keyframes por cena e narração PT-BR",
     "exemplo": "historia: Era uma vez três balões que queriam ver o mar... | nome=baloes"
   },
   {
@@ -273,5 +278,37 @@
     },
     "descricao": "gera uma imagem pela API Agnes (requer chave própria · skill imagens-agnes)",
     "exemplo": "imagem: uma raposa ruiva numa floresta nevada, cinematográfico | ratio=16:9"
+  },
+  {
+    "command": "animar",
+    "fila": "cpu",
+    "kind": "agent",
+    "aguarda_artefato": true,
+    "timeout_setup_segundos": 1200,
+    "prompt": "prompts/animar.md",
+    "artefato_exts": [
+      "mp4"
+    ],
+    "max_tentativas": 2,
+    "timeout_segundos": 14400,
+    "perfil": {
+      "modelo": "sonnet",
+      "esforco": "low"
+    },
+    "aceita_destino": true,
+    "campos": {
+      "segundos": {
+        "tipo": "texto",
+        "padrao": "15",
+        "descricao": "duração de 4 a 60 segundos"
+      },
+      "ratio": {
+        "tipo": "texto",
+        "padrao": "9:16",
+        "descricao": "proporção do vídeo, ex.: 9:16 ou 1:1"
+      }
+    },
+    "descricao": "anima uma foto ou arte com Agnes; preserva a imagem e une clipes para durações acima de 12 segundos",
+    "exemplo": "animar: /caminho/arte.png | segundos=15 | ratio=9:16"
   }
 ]

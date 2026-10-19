@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/inematds/videos-agnes",
+  "commit": "dca7c5d5b25f5ed21180e98057ebfca5224c466e",
+  "adapted_files": {
+    "pipeline.py": ["scripts/agnes_story.py", "scripts/agnes_video.py", "scripts/agnes_image.py"],
+    "imagem_video.py": ["scripts/agnes_video.py"],
+    "revisao.py": ["scripts/agnes_narration.py"]
+  },
+  "runtime": "Agnes API + FFmpeg + local Kokoro CPU voice; delivery through inemaccbot"
+}
