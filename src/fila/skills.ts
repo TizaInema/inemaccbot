@@ -10,6 +10,7 @@
 // saída — vem toda de `dominio/`.
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { iniciarCpuMedia, promptCpuMedia, usaCpuMedia } from './cpu-media.js';
 
 import { extrairAlvo, extrairArtefato, SemContrato } from '../dominio/artefato.js';
 import { renderizarPrompt } from '../dominio/prompt.js';
@@ -83,6 +84,7 @@ export function parseEntradaSkill(input: string): EntradaSkill {
 }
 
 export interface OpcoesSkills {
+  cpuMedia?: boolean;
   defs: SkillDef[];
   /** Raiz do repo — os prompts do registry são relativos a ela. */
   raizRepo: string;
@@ -381,7 +383,9 @@ export function criarPromptDe(opts: OpcoesSkills): (job: Job) => Promise<Context
       // a skill não declara mais (registry editado depois do enfileiramento) é
       // descartado aqui, senão `renderizarPrompt` derrubaria o job por uma
       // variável que o template não usa.
-      prompt: renderizarPrompt(template, {
+      prompt: opts.cpuMedia && usaCpuMedia(def.command)
+        ? promptCpuMedia(def.command, entrada.entrada, camposDeclarados(def, entrada.campos), saida)
+        : renderizarPrompt(template, {
         input: entrada.entrada,
         saida,
         // Só entra quando o template pede: `renderizarPrompt` derruba o job se
@@ -408,13 +412,19 @@ export function criarPromptDe(opts: OpcoesSkills): (job: Job) => Promise<Context
       ...(def.aguarda_artefato
         ? {
           interpretarSaida: (bruto: string) => extrairAlvo(bruto, def.artefato_exts),
-          aguardarArtefato: (alvo: string, sinal: AbortSignal) =>
-            esperarArtefato(alvo, {
+          aguardarArtefato: (alvo: string, sinal: AbortSignal) => {
+            if (opts.cpuMedia && usaCpuMedia(def.command) && !trabalhoEmCurso(alvo)) {
+              if (alvo !== saida) throw new Error('O agente declarou uma saída diferente da autorizada.');
+              if (sinal.aborted) return Promise.reject(sinal.reason);
+              iniciarCpuMedia(opts.raizRepo, def.command, saida, camposDeclarados(def, entrada.campos).vertical === 'sim');
+            }
+            return esperarArtefato(alvo, {
               timeoutMs: def.timeout_segundos * 1_000,
               sinal,
               log: opts.log,
               ...opts.espera,
-            }),
+            });
+          },
           // Adoção (§2.5 "procure antes de criar"): o `.log` ao lado do alvo
           // prova que uma tentativa anterior já disparou o trabalho.
           ...(emCurso ? { alvoEmCurso: saida } : {}),

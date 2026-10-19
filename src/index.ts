@@ -422,6 +422,7 @@ export function criarServico(cfg: Config, deps: DepsServico): Servico {
     );
 
     const promptDe = criarPromptDe({
+      cpuMedia: cfg.cpuMedia,
       defs,
       raizRepo: RAIZ_REPO,
       projetosDir: cfg.projetosDir,

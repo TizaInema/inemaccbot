@@ -11,6 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const cwd = join(root, 'state/smoke-skill'); mkdirSync(cwd, {recursive:true});
 const perfil = {motor:'codex', modelo:'executor', esforco:'low'};
 const promptDe = criarPromptDe({
+  cpuMedia:true,
   defs:carregarSkills(join(root, 'config/skills.json'), root), raizRepo:root,
   projetosDir:dirname(root), raizArtefatos:cwd, cwd, perfilPadrao:perfil,
 });
