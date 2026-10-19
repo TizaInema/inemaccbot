@@ -662,6 +662,7 @@ describe('vídeo final: link e nome do título', () => {
     const msg = eventos.filter((e) => e.texto.includes('sem link')).at(-1)!.texto;
     expect(msg).toContain('A1-mulheres-v1');
     expect(msg).toContain(join(dir, 'reel-9.mp4'));
+    expect(eventos.filter((e) => e.texto.includes('sem link')).at(-1)!.anexo).toBe(join(dir, 'reel-9.mp4'));
   });
 });
 

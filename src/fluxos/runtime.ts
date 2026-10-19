@@ -765,7 +765,7 @@ export class Fluxos {
         // O vídeo existe no disco do bot; só não deu para publicar. Dizer o
         // caminho é melhor que omitir — sem isto o alvo simplesmente sumiria
         // da mensagem final.
-        this.avisar(fluxo, `🎬 ${titulo} — pronto, mas sem link: ${fase.dados}`);
+        this.avisar(fluxo, `🎬 ${titulo} — pronto, mas sem link: ${fase.dados}`, fase.dados);
         continue;
       }
       // UM link, o primeiro — não os três. `PUBLICO_URLS` lista as bases porque
