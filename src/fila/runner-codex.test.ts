@@ -78,6 +78,11 @@ describe('registro de motores', () => {
 });
 
 describe('execução real de subprocesso', () => {
+  it('preserva a causa no fim do stderr, após o cabeçalho do CLI', async () => {
+    const r = new CodexRunner({binario:process.execPath,montarArgs:()=>['-e',"process.stderr.write('cabecalho\\n'.repeat(200)+'ERRO: modelo indisponivel'); process.exit(1)"]});
+    const exec=r.iniciar({...ctx('sonnet','low'),cwd:process.cwd()});
+    try {await expect(exec.aguardar()).rejects.toThrow('modelo indisponivel');}finally{await exec.limpar();}
+  });
   it('devolve somente a mensagem final gravada pelo Codex', async () => {
     const r = new CodexRunner({binario:process.execPath,montarArgs:(_ctx,out)=>['-e',`require('node:fs').writeFileSync(${JSON.stringify(out)},'RESULT: teste'); console.log('metadados');`]});
     const exec=r.iniciar({...ctx('sonnet','low'),cwd:process.cwd()});

@@ -128,7 +128,7 @@ export class CodexRunner implements Runner {
             return reject(new Error(`${this.binario} terminou sem gravar a mensagem final`));
           }
         }
-        const cauda = [stderr.texto.trim(), stdout.texto.trim()].filter(Boolean).join('\n').slice(0, 500);
+        const cauda = [stderr.texto.trim(), stdout.texto.trim()].filter(Boolean).join('\n').slice(-1200);
         reject(new Error(`${this.binario} saiu com codigo ${code}: ${cauda}`));
       });
     });
