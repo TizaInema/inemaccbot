@@ -19,10 +19,11 @@ RATIOS = {'16:9': (1280,720), '9:16': (720,1280), '1:1': (720,720),
 
 
 class ApiError(RuntimeError):
-    def __init__(self, status, retry_after=0):
+    def __init__(self, status, retry_after=0, reason='servico_indisponivel'):
         self.status = status
         self.retry_after = retry_after
-        super().__init__('Agnes respondeu HTTP ' + str(status))
+        self.reason = reason
+        super().__init__('Agnes respondeu HTTP ' + str(status) + ' (' + reason + ')')
 
 
 def atomic_json(path, value):
@@ -59,8 +60,15 @@ def request(method, path, body=None, root=False):
     except urllib.error.HTTPError as error:
         try: after = min(120, max(0, int(error.headers.get('Retry-After', '0'))))
         except (TypeError, ValueError): after = 0
+        detail = error.read(16384).lower()
+        reason = ('modelo_sem_canal' if b'no available channel' in detail else
+                  'fila_cheia' if b'video_queue_full' in detail or b'queue full' in detail else
+                  'limite_de_uso' if b'rate limit' in detail or error.code == 429 else
+                  'saldo_ou_cota' if error.code == 402 else
+                  'credencial_recusada' if error.code in (401,403) else
+                  'parametros_recusados' if error.code == 400 else 'servico_indisponivel')
         error.close()
-        raise ApiError(error.code, after) from None
+        raise ApiError(error.code, after, reason) from None
     except (urllib.error.URLError, TimeoutError):
         raise RuntimeError('Falha de conexão com a Agnes; nenhum token foi exibido.') from None
 
@@ -121,6 +129,8 @@ def generate_clip(destination, row, save, body, timeout=2700, interval=15):
                 result = request('POST','/videos',body)
             except ApiError as error:
                 row.pop('creation_pending',None); save()
+                row['last_error'] = {'http':error.status,'reason':error.reason}; save()
+                if error.reason == 'modelo_sem_canal': raise
                 if error.status not in (429,503) or attempt == 5: raise
                 delay = max(error.retry_after, 70 if error.status == 429 else min(120,30*(attempt+1)))
                 print(f'progresso: Agnes HTTP {error.status}; nova tentativa em {delay}s', flush=True)

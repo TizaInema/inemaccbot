@@ -15,4 +15,4 @@ Se não conseguir iniciar: ERRO: <motivo curto>.
 ## NÃO MEXA NA MÁQUINA
 Se faltar ferramenta ou credencial, NÃO instale. Declare ERRO: falta a dependência e pare.
 
-Propor??o do filme: {{ratio}}.
+Proporção do filme: {{ratio}}.

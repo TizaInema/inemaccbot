@@ -121,6 +121,14 @@ class AgnesTests(unittest.TestCase):
             with self.assertRaises(video.ApiError) as caught: video.request('GET','/models')
         self.assertNotIn('do-not-print',str(caught.exception))
 
+    def test_unavailable_model_is_reported_without_raw_provider_body(self):
+        error=urllib.error.HTTPError('https://example.org',503,'Unavailable',{},
+            io.BytesIO(b'{"error":{"message":"No available channel for model; secret=do-not-print"}}'))
+        with patch.object(video,'api_key',return_value='test'), patch.object(video.urllib.request,'urlopen',side_effect=error):
+            with self.assertRaises(video.ApiError) as caught: video.request('POST','/videos',{})
+        self.assertEqual(caught.exception.reason,'modelo_sem_canal')
+        self.assertNotIn('do-not-print',str(caught.exception))
+
     def test_narration_revision_preserves_words_and_expands_numbers(self):
         text,changes=revisar('vc tem 2 amigos')
         self.assertEqual(text,'você tem dois amigos'); self.assertTrue(changes)
