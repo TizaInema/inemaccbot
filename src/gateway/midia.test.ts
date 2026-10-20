@@ -22,6 +22,10 @@ describe('nomeAnexo', () => {
 });
 
 describe('comandoDeAnexo', () => {
+  it('preserva a foto quando a legenda descreve o movimento desejado', () => {
+    expect(comandoDeAnexo('animar: sorriso suave | segundos=8', '/midia/foto.png'))
+      .toBe('animar: /midia/foto.png Movimento solicitado: sorriso suave | segundos=8');
+  });
   it('anima uma foto anexada preservando duração e proporção', () => {
     expect(comandoDeAnexo('animar: | segundos=15 | ratio=9:16', '/midia/foto.png'))
       .toBe('animar: /midia/foto.png | segundos=15 | ratio=9:16');

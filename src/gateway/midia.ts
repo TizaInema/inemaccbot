@@ -65,7 +65,9 @@ export function comandoDeAnexo(legenda: string, caminho: string): string {
 
   // Legenda com entrada própria ("transcrever: http://x") manda mais que o
   // anexo: quem escreveu foi explícito.
-  const entrada = jaTemEntrada ? cabeca.slice(i + 1).trim() : caminho;
+  const entrada = jaTemEntrada && verbo.toLowerCase() === 'animar'
+    ? `${caminho} Movimento solicitado: ${cabeca.slice(i + 1).trim()}`
+    : jaTemEntrada ? cabeca.slice(i + 1).trim() : caminho;
   // ...com UMA exceção, e ela é estreita de propósito: `capa` precisa das duas
   // coisas ao mesmo tempo — a legenda diz ONDE a imagem vai (`capa: A#22
   // jovens`) e o anexo É a imagem. Para os outros verbos o caminho continua

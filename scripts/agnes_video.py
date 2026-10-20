@@ -117,13 +117,14 @@ def download_video(url, destination):
         temporary.unlink(missing_ok=True)
 
 
-def generate_clip(destination, row, save, body, timeout=2700, interval=15):
+def generate_clip(destination, row, save, body, timeout=2700, interval=15, attempts=6):
+    if not 1 <= attempts <= 6: raise ValueError('Use de 1 a 6 tentativas de criação.')
     destination = Path(destination)
     if destination.exists(): return destination
     if not row.get('video_id') and not row.get('task_id'):
         if row.get('creation_pending'):
             raise RuntimeError('Criação anterior sem confirmação. Consulte a Agnes antes de reenviar para evitar duplicação.')
-        for attempt in range(6):
+        for attempt in range(attempts):
             row['creation_pending'] = True; save()
             try:
                 result = request('POST','/videos',body)
@@ -131,7 +132,7 @@ def generate_clip(destination, row, save, body, timeout=2700, interval=15):
                 row.pop('creation_pending',None); save()
                 row['last_error'] = {'http':error.status,'reason':error.reason}; save()
                 if error.reason == 'modelo_sem_canal': raise
-                if error.status not in (429,503) or attempt == 5: raise
+                if error.status not in (429,503) or attempt == attempts-1: raise
                 delay = max(error.retry_after, 70 if error.status == 429 else min(120,30*(attempt+1)))
                 print(f'progresso: Agnes HTTP {error.status}; nova tentativa em {delay}s', flush=True)
                 time.sleep(delay); continue
