@@ -351,6 +351,10 @@ export function criarPromptDe(opts: OpcoesSkills): (job: Job) => Promise<Context
     // da tentativa anterior agora, e não na hora de vigiar — ver
     // `limparMarcadores`.
     const emCurso = def.aguarda_artefato && trabalhoEmCurso(saida);
+    // A Agnes já pode ter aceitado clipes. Preserve o roteiro e os IDs ao
+    // retentar: pedir outro JSON ao modelo mudaria a história no meio da fila.
+    const retomarCpu = opts.cpuMedia && usaCpuMedia(def.command)
+      && existsSync(`${saida}.spec.json`) && existsSync(join(`${saida}.work`, 'state.json'));
     if (def.aguarda_artefato && !emCurso) limparMarcadores(saida);
 
     // Lido A CADA job de propósito: editar um prompt passa a valer para o
@@ -427,7 +431,7 @@ export function criarPromptDe(opts: OpcoesSkills): (job: Job) => Promise<Context
           },
           // Adoção (§2.5 "procure antes de criar"): o `.log` ao lado do alvo
           // prova que uma tentativa anterior já disparou o trabalho.
-          ...(emCurso ? { alvoEmCurso: saida } : {}),
+          ...(emCurso || retomarCpu ? { alvoEmCurso: saida } : {}),
           // Só o `/cancelar` mata o trabalho destacado. Desligamento e perda de
           // lease deixam vivo de propósito — é o que a adoção depende.
           encerrarTrabalho: () => encerrarTrabalhoDestacado(saida),

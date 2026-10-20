@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -62,6 +62,16 @@ describe('parseEntradaSkill', () => {
 });
 
 describe('criarPromptDe', () => {
+  it('retoma uma história Agnes pelo roteiro salvo, sem pedir outro ao modelo', async () => {
+    const saida=join(raiz,'artefatos','historia','7.mp4');
+    mkdirSync(saida+'.work',{recursive:true});
+    writeFileSync(saida+'.spec.json','{"scenes":[{"image_prompt":"Boat","narration":"Olá","motion":"Slow"}]}');
+    writeFileSync(join(saida+'.work','state.json'),'{"scenes":{"0":{"video_id":"accepted-test"}}}');
+    const historias=defs.map(d=>({...d,command:'historia',artefato_exts:['mp4'],aguarda_artefato:true}));
+    const ctx=await criarPromptDe(opts({cpuMedia:true,defs:historias}))(job({tarefa:'historia'}));
+    expect(ctx.alvoEmCurso).toBe(saida);
+    expect(readFileSync(join(saida+'.work','state.json'),'utf8')).toContain('accepted-test');
+  });
   it('recusa cwd inexistente na CONSTRUÇÃO — erro de config aparece no boot', () => {
     expect(() => criarPromptDe(opts({ cwd: join(raiz, 'nao-existe') }))).toThrow(/cwd/);
   });
