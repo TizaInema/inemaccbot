@@ -334,6 +334,78 @@ describe('criarBot', () => {
     return enviados;
   }
 
+  async function simularFoto(bot: Bot, id: number, legenda = '', album?: string, chatId = 123): Promise<void> {
+    await bot.handleUpdate({ update_id: id + 100, message: {
+      message_id: id, date: Date.now() / 1000,
+      chat: { id: chatId, type: 'private', first_name: 'x' },
+      from: { id: chatId, is_bot: false, first_name: 'x' },
+      photo: [
+        { file_id: `mini-${id}`, file_unique_id: `m${id}`, width: 90, height: 90 },
+        { file_id: `foto-${id}`, file_unique_id: `f${id}`, width: 1280, height: 720 },
+      ], caption: legenda, ...(album ? { media_group_id: album } : {}),
+    } });
+  }
+
+  it('recebe foto comum, baixa a maior resolução e responde antes de interpretar a legenda', async () => {
+    const ordem: string[] = [];
+    const baixarAnexo = vi.fn(async () => '/midia/foto.jpg');
+    const aoComando = vi.fn(async (_chat, texto: string) => { ordem.push(texto); return 'enfileirado'; });
+    const { bot } = criarBot(cfgCom([123]), { baixarAnexo, aoComando, aposResponder: async () => {} });
+    await simularTexto(bot, 123, '/ping'); aoComando.mockClear(); ordem.length = 0;
+    bot.api.config.use(async (_p, metodo, carga) => {
+      if (metodo === 'sendMessage') ordem.push(String((carga as { text: string }).text));
+      return { ok: true, result: { message_id: 1 } } as never;
+    });
+    await simularFoto(bot, 1, 'animar: movimento suave | segundos=15');
+    expect(baixarAnexo).toHaveBeenCalledWith('foto-1', 'foto-1.jpg');
+    expect(ordem[0]).toContain('Recebi 1 imagem');
+    expect(aoComando).toHaveBeenCalledWith(123, 'animar: /midia/foto.jpg Movimento solicitado: movimento suave | segundos=15');
+  });
+
+  it('reúne quatro fotos do álbum antes de interpretar uma única legenda', async () => {
+    vi.useFakeTimers();
+    try {
+      const baixarAnexo = vi.fn(async (_id, nome) => `/midia/${nome}`);
+      const aoComando = vi.fn(async (_chat: number, _texto: string) => 'pedido recebido');
+      const { bot } = criarBot(cfgCom([123]), { baixarAnexo, aoComando, aposResponder: async () => {} });
+      await simularTexto(bot, 123, '/ping'); aoComando.mockClear();
+      for (let i = 1; i <= 4; i++) await simularFoto(bot, i, i === 1 ? 'Faça um vídeo usando estas quatro imagens' : '', 'album');
+      expect(aoComando).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1200);
+      expect(baixarAnexo).toHaveBeenCalledTimes(4);
+      expect(aoComando).toHaveBeenCalledTimes(1);
+      const texto = aoComando.mock.calls[0]![1];
+      for (let i = 1; i <= 4; i++) expect(texto).toContain(`/midia/foto-${i}.jpg`);
+      expect(texto).toContain('Faça um vídeo');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('preserva as fotos para o pedido enviado em uma mensagem de texto posterior e isola os chats', async () => {
+    const aoComando = vi.fn(async (_chat: number, _texto: string) => 'ok');
+    const { bot } = criarBot(cfgCom([123, 456]), {
+      baixarAnexo: async (_id, nome) => `/midia/${nome}`, aoComando, aposResponder: async () => {},
+    });
+    await simularTexto(bot, 123, '/ping'); aoComando.mockClear();
+    for (let i = 1; i <= 4; i++) await simularFoto(bot, i, '', 'album');
+    await simularTexto(bot, 123, 'Faça um vídeo com elas');
+    expect(aoComando.mock.calls[0]![1]).toContain('/midia/foto-4.jpg');
+    await simularTexto(bot, 456, 'Faça um vídeo');
+    expect(aoComando).toHaveBeenLastCalledWith(456, 'Faça um vídeo');
+    await simularTexto(bot, 123, '/status');
+    expect(aoComando).toHaveBeenLastCalledWith(123, '/status');
+  });
+
+  it('não baixa fotos de chats não autorizados nem inicia pedidos com álbum incompleto', async () => {
+    const baixarAnexo = vi.fn(async () => { throw new Error('falha de rede com URL privada'); });
+    const aoComando = vi.fn(async () => 'ok');
+    const { bot } = criarBot(cfgCom([123]), { baixarAnexo, aoComando, aposResponder: async () => {} });
+    await simularTexto(bot, 123, '/ping'); aoComando.mockClear();
+    await simularFoto(bot, 1, '', undefined, 999);
+    expect(baixarAnexo).not.toHaveBeenCalled();
+    await simularFoto(bot, 2, 'animar:');
+    expect(aoComando).not.toHaveBeenCalled();
+  });
+
   it('pareia: muta a allowlist em memória e persiste, e o comando não roda nessa mensagem', async () => {
     const cfg = cfgCom([0]);
     const persistirAllowlist = vi.fn();

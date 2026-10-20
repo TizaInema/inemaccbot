@@ -244,9 +244,77 @@ export function criarBot(
     }
   };
 
+  // Fotos de um álbum chegam como updates separados. Aguarde o grupo inteiro
+  // antes de interpretar a legenda, preservando também o contexto do próximo texto.
+  const fotosRecentes = new Map<number, { caminhos: string[]; instante: number }>();
+  type FotoRecebida = { fileId: string; nome: string; legenda: string; tamanho: number };
+  const albuns = new Map<string, { chatId: number; fotos: FotoRecebida[]; timer: ReturnType<typeof setTimeout> }>();
+  const contextoFotos = (chatId: number): string[] => {
+    const recente = fotosRecentes.get(chatId);
+    if (!recente || Date.now() - recente.instante > 30 * 60_000) {
+      fotosRecentes.delete(chatId);
+      return [];
+    }
+    return recente.caminhos;
+  };
+  const comFotos = (texto: string, caminhos: string[]): string => {
+    const [pedido, ...campos] = texto.split('|');
+    return [`${pedido!.trim()}\n\nImagens anexadas pelo usuário (na ordem de envio):\n${caminhos.join('\n')}`, ...campos].join(' | ');
+  };
+  const enviarNoChat = async (chatId: number, pedacos: string[]): Promise<void> => {
+    await enviarPedacos(async (pedaco) => { await bot.api.sendMessage(chatId, pedaco); }, pedacos);
+    await soltarPendentes();
+  };
+  const receberFotos = async (chatId: number, fotos: FotoRecebida[]): Promise<void> => {
+    if (!permitido(chatId)) {
+      log(`gateway: fotos rejeitadas — chat ${chatId} fora da allowlist`);
+      return;
+    }
+    const caminhos: string[] = [];
+    for (const foto of fotos) {
+      if (foto.tamanho > LIMITE_ANEXO_BYTES) {
+        await enviarNoChat(chatId, ['Uma das imagens passa do limite de 20 MB. Reenvie o álbum com imagens menores.']);
+        return;
+      }
+      try { caminhos.push(await deps.baixarAnexo!(foto.fileId, foto.nome)); }
+      catch {
+        log(`gateway: falha ao baixar foto do chat ${chatId}`);
+        await enviarNoChat(chatId, ['Não consegui baixar todas as imagens. Reenvie o álbum; o pedido ainda não foi iniciado.']);
+        return;
+      }
+    }
+    fotosRecentes.set(chatId, { caminhos: [...contextoFotos(chatId), ...caminhos].slice(-10), instante: Date.now() });
+    await enviarNoChat(chatId, [`Recebi ${caminhos.length === 1 ? '1 imagem' : `${caminhos.length} imagens`}. ${fotos.some(f => f.legenda.trim()) ? 'Vou analisar seu pedido.' : 'Agora envie o que deseja fazer com elas.'}`]);
+    log(`gateway: recebidas ${caminhos.length} fotos do chat ${chatId}`);
+    const legenda = fotos.map(f => f.legenda.trim()).filter(Boolean).join('\n');
+    if (!legenda) return;
+    if (caminhos.length > 1 && /^\/?animar\s*:/i.test(legenda)) {
+      await enviarNoChat(chatId, ['O comando animar trabalha com uma imagem por vez. Envie a imagem escolhida com a legenda animar: e descreva o movimento.']);
+      return;
+    }
+    const texto = caminhos.length === 1 && (/^[\w-]+\s*:/.test(legenda) || /^(animar|transcrever|dublar|capa)$/i.test(legenda))
+      ? comandoDeAnexo(legenda, caminhos[0]!)
+      : comFotos(legenda, caminhos);
+    await enviarNoChat(chatId, await rotear({ chatId, texto }, { permitido, aoComando: deps.aoComando, log }));
+  };
+  const soltarAlbum = async (chave: string): Promise<void> => {
+    const album = albuns.get(chave);
+    if (!album) return;
+    clearTimeout(album.timer);
+    albuns.delete(chave);
+    await receberFotos(album.chatId, album.fotos);
+  };
+
   bot.on('message:text', async (ctx) => {
+    for (const [chave, album] of albuns) {
+      if (album.chatId === ctx.chat.id) await soltarAlbum(chave);
+    }
+    const fotos = permitido(ctx.chat.id) ? contextoFotos(ctx.chat.id) : [];
+    // Comandos de serviço continuam exatos; pedidos livres recebem as fotos.
+    const texto = fotos.length && !ctx.message.text.startsWith('/')
+      ? comFotos(ctx.message.text, fotos) : ctx.message.text;
     const pedacos = await rotear(
-      { chatId: ctx.chat.id, texto: ctx.message.text },
+      { chatId: ctx.chat.id, texto },
       { permitido, aoComando: deps.aoComando, log, parear },
     );
     await enviarPedacos(async (pedaco) => { await ctx.reply(pedaco); }, pedacos);
@@ -257,6 +325,27 @@ export function criarBot(
   // `file_id` e o nome, e o resto é decisão da skill.
   if (deps.baixarAnexo) {
     const baixar = deps.baixarAnexo;
+    bot.on('message:photo', async (ctx) => {
+      if (!permitido(ctx.chat.id)) {
+        log(`gateway: fotos rejeitadas — chat ${ctx.chat.id} fora da allowlist`);
+        return;
+      }
+      const m = ctx.message;
+      const foto = m.photo.reduce((maior, atual) => atual.width * atual.height > maior.width * maior.height ? atual : maior);
+      const recebida: FotoRecebida = { fileId: foto.file_id, nome: `foto-${m.message_id}.jpg`, legenda: m.caption ?? '', tamanho: foto.file_size ?? 0 };
+      if (!m.media_group_id) {
+        await receberFotos(ctx.chat.id, [recebida]);
+        return;
+      }
+      const chave = `${ctx.chat.id}:${m.media_group_id}`;
+      const anterior = albuns.get(chave);
+      if (anterior) clearTimeout(anterior.timer);
+      const timer = setTimeout(() => {
+        void soltarAlbum(chave).catch(() => { log(`gateway: falha ao processar álbum do chat ${ctx.chat.id}`); });
+      }, 1200);
+      timer.unref();
+      albuns.set(chave, { chatId: ctx.chat.id, fotos: [...(anterior?.fotos ?? []), recebida], timer });
+    });
     bot.on(['message:document', 'message:video', 'message:audio', 'message:voice'], async (ctx) => {
       const m = ctx.message;
       const arquivo = m?.document ?? m?.video ?? m?.audio ?? m?.voice;
